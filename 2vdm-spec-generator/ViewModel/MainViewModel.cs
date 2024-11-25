@@ -1,6 +1,8 @@
 ﻿using _2vdm_spec_generator.Models;
+using CommunityToolkit.Maui.Storage;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.Maui.Controls;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 
@@ -9,66 +11,80 @@ namespace _2vdm_spec_generator.ViewModel
     public partial class MainViewModel : ObservableObject
     {
 
-        public MainViewModel()
+        private readonly IFolderPicker _folderPicker;
+        public MainViewModel(IFolderPicker folderPicker)
         {
-            Items = new ObservableCollection<MarkdownFile>();
+            _folderPicker = folderPicker;
+            FileSystemItems = new ObservableCollection<FileSystemItem>();
         }
 
         [ObservableProperty]
-        ObservableCollection<MarkdownFile> items;
+        ObservableCollection<FileSystemItem> fileSystemItems;
 
         [ObservableProperty]
-        MarkdownFile selectedFile;
+        string selectedFileContent;
 
         [RelayCommand]
-        async Task SelectFile() 
+        async Task SelectFolder()
         {
             try
             {
-                var options = new PickOptions
+                var result = await _folderPicker.PickAsync();
+                if (result.IsSuccessful)
                 {
-                    PickerTitle = "MDファイルを選択してください",
-                    FileTypes = new FilePickerFileType(
-                        new Dictionary<DevicePlatform, IEnumerable<string>>
-                        {
-                        { DevicePlatform.WinUI, new[] { ".md" } },
-                        { DevicePlatform.macOS, new[] { "md" } }
-                        })
-                };
-
-                var result = await FilePicker.Default.PickAsync(options);
-                if (result != null)
-                {
-                    var content = await File.ReadAllTextAsync(result.FullPath);
-                    // ここでファイルの内容（fileContent）を処理
-                    var mdFile = new MarkdownFile
-                    {
-                        FileName = result.FileName,
-                        FilePath = result.FullPath,
-                        Content = content
-                    };
-                    Items.Add(mdFile);
+                    FileSystemItems.Clear();
+                    await LoadFolder(result.Folder.Path, FileSystemItems);
                 }
             }
             catch (Exception ex)
             {
-                await Shell.Current.DisplayAlert("エラー", $"ファイル選択中にエラーが発生しました: {ex.Message}", "OK");
+                await Shell.Current.DisplayAlert("エラー", $"フォルダ選択中にエラーが発生しました: {ex.Message}", "OK");
             }
         }
 
-        [RelayCommand]
-        void Delete(MarkdownFile file)
+        private async Task LoadFolder(string folderPath, ObservableCollection<FileSystemItem> items)
         {
-            if (Items.Contains(file))
+            var dirInfo = new DirectoryInfo(folderPath);
+            foreach (var dir in dirInfo.GetDirectories())
             {
-                Items.Remove(file);
+                var dirItem = new FileSystemItem
+                {
+                    Name = dir.Name,
+                    FullPath = dir.FullName,
+                    IsDirectory = true
+                };
+                items.Add(dirItem);
+                await LoadFolder(dir.FullName, dirItem.Children);
+            }
+
+            foreach (var file in dirInfo.GetFiles("*.md"))
+            {
+                items.Add(new FileSystemItem
+                {
+                    Name = file.Name,
+                    FullPath = file.FullName,
+                    IsDirectory = false,
+                    Content = await File.ReadAllTextAsync(file.FullName)
+                });
             }
         }
 
         [RelayCommand]
-        async Task ShowContent(MarkdownFile file)
+        async Task SelectFile(FileSystemItem item)
         {
-            await Shell.Current.DisplayAlert(file.FileName, file.Content, "閉じる");
+            if (!item.IsDirectory)
+            {
+                SelectedFileContent = item.Content;
+            }
         }
+
+        //[RelayCommand]
+        //void Delete(MarkdownFile file)
+        //{
+        //    if (Items.Contains(file))
+        //    {
+        //        Items.Remove(file);
+        //    }
+        //}
     }
 }
