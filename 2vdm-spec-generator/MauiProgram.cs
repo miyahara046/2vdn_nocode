@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.Logging;
+﻿using _2vdm_spec_generator.ViewModel;
+using Microsoft.Extensions.Logging;
 
 namespace _2vdm_spec_generator
 {
@@ -15,9 +16,12 @@ namespace _2vdm_spec_generator
                     fonts.AddFont("OpenSans-Semibold.ttf", "OpenSansSemibold");
                 });
 
+            builder.Services.AddSingleton<MainPage>();
+            builder.Services.AddSingleton<MainViewModel>();
+
 #if DEBUG
-    		builder.Logging.AddDebug();
-#endif
+            builder.Logging.AddDebug();
+#endif     
 
             return builder.Build();
         }

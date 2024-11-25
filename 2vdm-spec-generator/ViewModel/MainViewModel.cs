@@ -1,22 +1,40 @@
-﻿using System.ComponentModel;
+﻿using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using System.Collections.ObjectModel;
+using System.ComponentModel;
 
 namespace _2vdm_spec_generator.ViewModel
 {
-    public class MainViewModel : INotifyPropertyChanged
+    public partial class MainViewModel : ObservableObject
     {
+
+        public MainViewModel()
+        {
+            Items = new ObservableCollection<string>();
+        }
+
+        [ObservableProperty]
+        ObservableCollection<string> items;
+
+        [ObservableProperty]
         string text;
 
-        public string Text
+        [RelayCommand]
+        void Add() {
+            if (string.IsNullOrWhiteSpace(Text))
+                return;
+
+            Items.Add(Text);
+            Text = string.Empty;
+                }
+
+        [RelayCommand]
+        void Delete(string item)
         {
-            get => text;
-            set
+            if (Items.Contains(item))
             {
-                text = value;
-                OnPropertyChanged(nameof(Text));
+                Items.Remove(item);
             }
         }
-        public event PropertyChangedEventHandler? PropertyChanged;
-        void OnPropertyChanged(string propertyName) =>
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 }
