@@ -3,7 +3,8 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              x:Class="_2vdm_spec_generator.MainPage"
              xmlns:viewmodel="clr-namespace:_2vdm_spec_generator.ViewModel"
-             x:DataType="viewmodel:MainViewModel">
+             x:DataType="viewmodel:MainViewModel"
+             xmlns:models="clr-namespace:_2vdm_spec_generator.Models">
 
     <Grid RowDefinitions="100, Auto, *"
           ColumnDefinitions=".75*, .25*"
@@ -16,25 +17,25 @@
                BackgroundColor="Transparent">
         </Image>
 
-        <Entry Placeholder="Enter task!"
-               Text="{Binding Text}"
-               Grid.Row="1">
-        </Entry>
-
-        <Button Text="Add"
-                Command="{Binding AddCommand}"
+        <Button Text="画面仕様を選択(.md)"
+                Command="{Binding SelectFileCommand}"
                 Grid.Row="1"
-                Grid.Column="1"/>
+                Grid.Column="0"/>
 
         <CollectionView Grid.Row="2"
                         Grid.ColumnSpan="2"
                         ItemsSource="{Binding Items}">
             <CollectionView.ItemTemplate>
-                <DataTemplate x:DataType="{x:Type x:String}">
+                <DataTemplate x:DataType="models:MarkdownFile">
                     <Grid Padding="0,5"
                             ColumnDefinitions="*, Auto">
                         <Frame Grid.Column="0">
-                            <Label Text="{Binding .}"
+                            <Frame.GestureRecognizers>
+                                <TapGestureRecognizer 
+                            Command="{Binding Source={RelativeSource AncestorType={x:Type viewmodel:MainViewModel}}, Path=ShowContentCommand}"
+                            CommandParameter="{Binding .}"/>
+                            </Frame.GestureRecognizers>
+                            <Label Text="{Binding FileName}"
                                    FontSize="24"/>
                         </Frame>
                         <Button Grid.Column="1"
@@ -44,20 +45,6 @@
                                 BackgroundColor="Red"
                                 Margin="5,0,0,0"/>
                     </Grid>
-                    <!-- <SwipeView>
-                        <SwipeView.RightItems>
-                            <SwipeItems>
-                                <SwipeItem Text="Delete"
-                                           BackgroundColor="Red"/>
-                            </SwipeItems>
-                        </SwipeView.RightItems>
-                        <Grid Padding="0,5">
-                            <Frame>
-                                <Label Text="{Binding .}"
-                                       FontSize="24"/>
-                            </Frame>
-                        </Grid>
-                    </SwipeView> -->
                 </DataTemplate>
 
             </CollectionView.ItemTemplate>
