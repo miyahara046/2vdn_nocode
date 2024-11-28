@@ -26,10 +26,6 @@
                             </Label.GestureRecognizers>
                         </Label>
                     </Grid>
-                    <controls:TreeView 
-                        Items="{Binding Children}"
-                        ItemTappedCommand="{Binding Source={x:Reference this}, Path=ItemTappedCommand}"
-                        IsVisible="{Binding IsDirectory}"/>
                 </VerticalStackLayout>
             </DataTemplate>
         </CollectionView.ItemTemplate>

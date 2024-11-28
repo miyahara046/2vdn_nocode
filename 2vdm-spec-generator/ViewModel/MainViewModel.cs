@@ -15,7 +15,7 @@ namespace _2vdm_spec_generator.ViewModel
         public MainViewModel(IFolderPicker folderPicker)
         {
             _folderPicker = folderPicker;
-            FileSystemItems = new ObservableCollection<FileSystemItem>();
+            fileSystemItems = new ObservableCollection<FileSystemItem>();
         }
 
         [ObservableProperty]
@@ -42,24 +42,23 @@ namespace _2vdm_spec_generator.ViewModel
             }
         }
 
-        private async Task LoadFolder(string folderPath, ObservableCollection<FileSystemItem> items)
+        private async Task LoadFolder(string path, ObservableCollection<FileSystemItem> items)
         {
-            var dirInfo = new DirectoryInfo(folderPath);
-            foreach (var dir in dirInfo.GetDirectories())
+            var itemInfo = new DirectoryInfo(path);
+            foreach (var dir in itemInfo.GetDirectories("*", SearchOption.AllDirectories))
             {
-                var dirItem = new FileSystemItem
+                var dirItem = new DirectoryItem
                 {
                     Name = dir.Name,
                     FullPath = dir.FullName,
                     IsDirectory = true
                 };
                 items.Add(dirItem);
-                await LoadFolder(dir.FullName, dirItem.Children);
             }
 
-            foreach (var file in dirInfo.GetFiles("*.md"))
+            foreach (var file in itemInfo.GetFiles("*.md"))
             {
-                items.Add(new FileSystemItem
+                items.Add(new FileItem
                 {
                     Name = file.Name,
                     FullPath = file.FullName,
@@ -72,9 +71,34 @@ namespace _2vdm_spec_generator.ViewModel
         [RelayCommand]
         async Task SelectFile(FileSystemItem item)
         {
-            if (!item.IsDirectory)
+            if (item is DirectoryItem dirItem)
             {
-                SelectedFileContent = item.Content;
+                dirItem.Children.Clear();
+                var itemInfo = new DirectoryInfo(item.FullPath);
+
+                foreach (var dir in itemInfo.GetDirectories())
+                {
+                    var newDirItem = new DirectoryItem
+                    {
+                        Name = dir.Name,
+                        FullPath = dir.FullName
+                    };
+                    dirItem.Children.Add(newDirItem);
+                }
+
+                foreach (var file in itemInfo.GetFiles("*.md"))
+                {
+                    dirItem.Children.Add(new FileItem
+                    {
+                        Name = file.Name,
+                        FullPath = file.FullName,
+                        Content = await File.ReadAllTextAsync(file.FullName)
+                    });
+                }
+            }
+            else if (item is FileItem fileItem)
+            {
+                SelectedFileContent = fileItem.Content;
             }
         }
 
