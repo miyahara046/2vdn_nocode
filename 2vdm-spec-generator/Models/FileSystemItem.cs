@@ -6,17 +6,14 @@ namespace _2vdm_spec_generator.Models
     {
         public string Name { get; set; }
         public string FullPath { get; set; }
-        public bool IsDirectory { get; set; } // 無くしたい
-        public int IndentLevel { get; set; } // 無くしたい
-
     }
 
     public class DirectoryItem : FileSystemItem
     {
-        public ObservableCollection<FileSystemItem> Children { get; set; }
+        public FileSystemInfo[] Children { get; set; }
         public DirectoryItem()
         {
-            Children = new ObservableCollection<FileSystemItem>();
+            Children = [];
         }
     }
 

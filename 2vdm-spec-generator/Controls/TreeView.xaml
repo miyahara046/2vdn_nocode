@@ -17,7 +17,7 @@
         <CollectionView.ItemTemplate>
             <DataTemplate x:DataType="models:FileSystemItem">
                 <VerticalStackLayout>
-                    <Grid Padding="{Binding IndentLevel, Converter={StaticResource IndentConverter}}">
+                    <Grid Margin="10,0,0,0">
                         <Label Text="{Binding Name}">
                             <Label.GestureRecognizers>
                                 <TapGestureRecognizer 

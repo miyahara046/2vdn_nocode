@@ -21,8 +21,8 @@
 
         <controls:TreeView Grid.Row="1"
                           Grid.Column="0"
-                          Items="{Binding FileSystemItems}"
-                          ItemTappedCommand="{Binding SelectFileCommand}"/>
+                          Items="{Binding TreeItems}"
+                          ItemTappedCommand="{Binding SelectItemCommand}"/>
         
         <!-- ファイル内容表示 -->
         <ScrollView Grid.Row="1" 
@@ -30,6 +30,13 @@
             <Label Text="{Binding SelectedFileContent}"
                Padding="10"/>
         </ScrollView>
+
+    <!-- <Button Text="ツリー構造を表示"
+        Command="{Binding PrintTreeItemsCommand}"
+        Grid.Column="0"
+        HeightRequest="40"
+        Margin="0,5,0,5"
+        VerticalOptions="Start"/> -->
     </Grid>
 
 </ContentPage>

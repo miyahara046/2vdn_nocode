@@ -15,11 +15,21 @@ namespace _2vdm_spec_generator.ViewModel
         public MainViewModel(IFolderPicker folderPicker)
         {
             _folderPicker = folderPicker;
-            fileSystemItems = new ObservableCollection<FileSystemItem>();
+            loadedItems = new ObservableCollection<FileSystemItem>();
+            treeItems = new ObservableCollection<FileSystemItem>();
         }
-
+        
+        // 開いているプロジェクトルートのパス
         [ObservableProperty]
-        ObservableCollection<FileSystemItem> fileSystemItems;
+        string projectRootPath;
+
+        // 保持しておくデータ
+        [ObservableProperty]
+        ObservableCollection<FileSystemItem> loadedItems;
+        
+        // ツリー表示に使用するデータ
+        [ObservableProperty]
+        ObservableCollection<FileSystemItem> treeItems;
 
         [ObservableProperty]
         string selectedFileContent;
@@ -32,8 +42,10 @@ namespace _2vdm_spec_generator.ViewModel
                 var result = await _folderPicker.PickAsync();
                 if (result.IsSuccessful)
                 {
-                    FileSystemItems.Clear();
-                    await LoadFolder(result.Folder.Path, FileSystemItems);
+                    LoadedItems.Clear();
+                    await LoadFolder(result.Folder.Path, LoadedItems);
+                    // TreeItemsを新しいコレクションとして作成
+                    TreeItems = new ObservableCollection<FileSystemItem>(LoadedItems);
                 }
             }
             catch (Exception ex)
@@ -43,58 +55,73 @@ namespace _2vdm_spec_generator.ViewModel
         }
 
         private async Task LoadFolder(string path, ObservableCollection<FileSystemItem> items)
-        {
-            var itemInfo = new DirectoryInfo(path);
-            foreach (var dir in itemInfo.GetDirectories("*", SearchOption.AllDirectories))
+        {   
+            var fileInfo = new FileInfo(path);
+            var dirInfo = new DirectoryInfo(path);
+            
+            // ファイルの場合
+            // 基底部
+            if (fileInfo.Exists && fileInfo.Extension.ToLower() == ".md")
+            {   
+                // ファイル情報を追加
+                items.Add(new FileItem
+                {
+                    Name = fileInfo.Name,
+                    FullPath = fileInfo.FullName,
+                    Content = await File.ReadAllTextAsync(fileInfo.FullName)
+                });
+            }
+            
+            // ディレクトリの場合
+            if (dirInfo.Exists)
             {
                 var dirItem = new DirectoryItem
                 {
-                    Name = dir.Name,
-                    FullPath = dir.FullName,
-                    IsDirectory = true
+                    Name = dirInfo.Name,
+                    FullPath = dirInfo.FullName,
+                    Children = dirInfo.GetFileSystemInfos()
                 };
+                // ディレクトリ情報を追加
                 items.Add(dirItem);
-            }
 
-            foreach (var file in itemInfo.GetFiles("*.md"))
-            {
-                items.Add(new FileItem
+                if (dirItem.Children.Count() > 0)
                 {
-                    Name = file.Name,
-                    FullPath = file.FullName,
-                    IsDirectory = false,
-                    Content = await File.ReadAllTextAsync(file.FullName)
-                });
+                    foreach(var subItem in dirItem.Children)
+                    {
+                        // 再帰的に子アイテムを処理
+                        await LoadFolder(subItem.FullName, items);
+                    }
+                }
+                // else if (fsInfo is FileInfo file)
+                // {
+                //     // 再帰的にファイルを処理
+                //     await LoadFolder(file.FullName, items);
+                // }
             }
         }
 
         [RelayCommand]
-        async Task SelectFile(FileSystemItem item)
+        async Task SelectItem(FileSystemItem item)
         {
             if (item is DirectoryItem dirItem)
             {
-                dirItem.Children.Clear();
-                var itemInfo = new DirectoryInfo(item.FullPath);
+        // 現在のアイテムのインデックスを取得
+        var currentIndex = TreeItems.IndexOf(item);
+        if (currentIndex != -1)
+        {
+            // LoadedItemsから該当するディレクトリの子要素を検索
+            var childItems = LoadedItems.Where(i => 
+                i.FullPath.StartsWith(item.FullPath + Path.DirectorySeparatorChar) &&
+                !i.FullPath.Substring(item.FullPath.Length + 1).Contains(Path.DirectorySeparatorChar)
+            ).ToList();
 
-                foreach (var dir in itemInfo.GetDirectories())
-                {
-                    var newDirItem = new DirectoryItem
-                    {
-                        Name = dir.Name,
-                        FullPath = dir.FullName
-                    };
-                    dirItem.Children.Add(newDirItem);
-                }
-
-                foreach (var file in itemInfo.GetFiles("*.md"))
-                {
-                    dirItem.Children.Add(new FileItem
-                    {
-                        Name = file.Name,
-                        FullPath = file.FullName,
-                        Content = await File.ReadAllTextAsync(file.FullName)
-                    });
-                }
+            // 子要素を現在のアイテムの直後に挿入
+            foreach (var child in childItems)
+            {
+                currentIndex++;
+                TreeItems.Insert(currentIndex, child);
+            }
+        }
             }
             else if (item is FileItem fileItem)
             {
@@ -110,5 +137,34 @@ namespace _2vdm_spec_generator.ViewModel
         //        Items.Remove(file);
         //    }
         //}
+
+        // [RelayCommand]
+        // void PrintTreeItems()
+        // {
+        //     foreach (var item in treeItems)
+        //     {
+        //         Console.WriteLine($"アイテム名: {item.Name}");
+                
+        //         if (item is DirectoryItem dirItem)
+        //         {
+        //             PrintChildren(dirItem.Children, 1);
+        //         }
+        //     }
+        // }
+
+        // private void PrintChildren(ObservableCollection<FileSystemItem> items, int level)
+        // {
+        //     string indent = new string(' ', level * 2);
+            
+        //     foreach (var item in items)
+        //     {
+        //         Console.WriteLine($"{indent}アイテム名: {item.Name}");
+                
+        //         if (item is DirectoryItem dirItem)
+        //         {
+        //             PrintChildren(dirItem.Children, level + 1);
+        //         }
+        //     }
+        // }
     }
 }
