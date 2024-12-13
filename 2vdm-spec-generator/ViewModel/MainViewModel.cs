@@ -41,11 +41,23 @@ namespace _2vdm_spec_generator.ViewModel
             {
                 var result = await _folderPicker.PickAsync();
                 if (result.IsSuccessful)
-                {
+                {   
+                    ProjectRootPath = result.Folder.Path;
                     LoadedItems.Clear();
-                    await LoadFolder(result.Folder.Path, LoadedItems);
-                    // TreeItemsを新しいコレクションとして作成
-                    TreeItems = new ObservableCollection<FileSystemItem>(LoadedItems);
+                    // 選択フォルダ以下のすべてのディレクトリとフォルダを読み込む
+                    await LoadFolder(ProjectRootPath, LoadedItems);
+
+                    // TreeItemsに選択フォルダ(プロジェクトルート)直下のアイテムのみを追加
+                    var rootItems = LoadedItems.Where(i => 
+                        i.FullPath.StartsWith(ProjectRootPath + Path.DirectorySeparatorChar) &&
+                        !i.FullPath.Substring(ProjectRootPath.Length + 1).Contains(Path.DirectorySeparatorChar)
+                    );
+
+                    TreeItems.Clear();
+                    foreach (var item in rootItems)
+                    {
+                        TreeItems.Add(item);
+                    }
                 }
             }
             catch (Exception ex)
@@ -105,23 +117,47 @@ namespace _2vdm_spec_generator.ViewModel
         {
             if (item is DirectoryItem dirItem)
             {
-        // 現在のアイテムのインデックスを取得
-        var currentIndex = TreeItems.IndexOf(item);
-        if (currentIndex != -1)
-        {
-            // LoadedItemsから該当するディレクトリの子要素を検索
-            var childItems = LoadedItems.Where(i => 
-                i.FullPath.StartsWith(item.FullPath + Path.DirectorySeparatorChar) &&
-                !i.FullPath.Substring(item.FullPath.Length + 1).Contains(Path.DirectorySeparatorChar)
-            ).ToList();
+                // 現在のアイテムのインデックスを取得
+                var currentIndex = TreeItems.IndexOf(item);
+                if (currentIndex != -1)
+                {
+                    // 現在のアイテムの直後の要素が、このディレクトリの子要素かどうかを確認
+                    var nextIndex = currentIndex + 1;
+                    if (nextIndex < TreeItems.Count && 
+                        TreeItems[nextIndex].FullPath.StartsWith(item.FullPath + Path.DirectorySeparatorChar))
+                    {
+                        // 子要素が表示されている場合は、それらを削除
+                        while (nextIndex < TreeItems.Count && 
+                            TreeItems[nextIndex].FullPath.StartsWith(item.FullPath + Path.DirectorySeparatorChar))
+                        {
+                            TreeItems.RemoveAt(nextIndex);
+                        }
+                    }
+                    else
+                    {
+                        // LoadedItemsから該当するディレクトリの子要素を検索
+                        var childItems = LoadedItems.Where(i => 
+                            i.FullPath.StartsWith(item.FullPath + Path.DirectorySeparatorChar) &&
+                            !i.FullPath.Substring(item.FullPath.Length + 1).Contains(Path.DirectorySeparatorChar)
+                        ).ToList();
 
-            // 子要素を現在のアイテムの直後に挿入
-            foreach (var child in childItems)
-            {
-                currentIndex++;
-                TreeItems.Insert(currentIndex, child);
-            }
-        }
+                        if (childItems.Any())
+                        {
+                            // 一時的なリストを作成して一括で更新
+                            var newItems = new ObservableCollection<FileSystemItem>(TreeItems);
+                            foreach (var child in childItems)
+                            {
+                                currentIndex++;
+                                newItems.Insert(currentIndex, child);
+                            }
+                            TreeItems = newItems;
+                        }
+                        else
+                        {
+                            await Shell.Current.DisplayAlert("デバッグ", "子要素が見つかりませんでした", "OK");
+                        }
+                    }
+                }
             }
             else if (item is FileItem fileItem)
             {
