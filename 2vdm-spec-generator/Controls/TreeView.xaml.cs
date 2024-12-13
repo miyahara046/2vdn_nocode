@@ -9,6 +9,10 @@ namespace _2vdm_spec_generator.Controls
         public static readonly BindableProperty ItemsProperty =
             BindableProperty.Create(nameof(Items), typeof(ObservableCollection<FileSystemItem>),
                 typeof(TreeView), null);
+        
+        public static readonly BindableProperty ProjectRootPathProperty =
+            BindableProperty.Create(nameof(ProjectRootPath), typeof(string),
+                typeof(TreeView), string.Empty);
 
         public static readonly BindableProperty ItemTappedCommandProperty =
             BindableProperty.Create(nameof(ItemTappedCommand), typeof(ICommand),
@@ -18,6 +22,12 @@ namespace _2vdm_spec_generator.Controls
         {
             get => (ObservableCollection<FileSystemItem>)GetValue(ItemsProperty);
             set => SetValue(ItemsProperty, value);
+        }
+        
+        public string ProjectRootPath
+        {
+            get => (string)GetValue(ProjectRootPathProperty);
+            set => SetValue(ProjectRootPathProperty, value);
         }
 
         public ICommand ItemTappedCommand
