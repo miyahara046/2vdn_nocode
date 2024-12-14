@@ -127,11 +127,13 @@ namespace _2vdm_spec_generator.ViewModel
                         TreeItems[nextIndex].FullPath.StartsWith(item.FullPath + Path.DirectorySeparatorChar))
                     {
                         // 子要素が表示されている場合は、それらを削除
-                        while (nextIndex < TreeItems.Count && 
-                            TreeItems[nextIndex].FullPath.StartsWith(item.FullPath + Path.DirectorySeparatorChar))
+                        var tempItems = new ObservableCollection<FileSystemItem>(TreeItems);
+                        while (nextIndex < tempItems.Count && 
+                            tempItems[nextIndex].FullPath.StartsWith(item.FullPath + Path.DirectorySeparatorChar))
                         {
-                            TreeItems.RemoveAt(nextIndex);
+                            tempItems.RemoveAt(nextIndex);
                         }
+                        TreeItems = tempItems;  // コレクション全体を更新して変更を通知
                     }
                     else
                     {
