@@ -10,20 +10,29 @@
     <ContentView.Resources>
         <ResourceDictionary>
             <converters:IndentConverter x:Key="IndentConverter"/>
+            <converters:IconConverter x:Key="IconConverter"/>
         </ResourceDictionary>
     </ContentView.Resources>
 
     <CollectionView ItemsSource="{Binding Items, Source={x:Reference this}}">
         <CollectionView.ItemTemplate>
             <DataTemplate x:DataType="models:FileSystemItem">
-                <Grid>
-                    <Label Text="{Binding Name}">
+                <Grid ColumnDefinitions="Auto,*">
+                    <Label Grid.Column="0">
                         <Label.Margin>
                             <MultiBinding Converter="{StaticResource IndentConverter}">
                                 <Binding Path="FullPath"/>
                                 <Binding Source="{x:Reference this}" Path="BindingContext.ProjectRootPath"/>
                             </MultiBinding>
                         </Label.Margin>
+                        <Label.Text>
+                            <MultiBinding Converter="{StaticResource IconConverter}">
+                                <Binding Path="." />
+                                <Binding Source="{x:Reference this}" Path="Items" />
+                            </MultiBinding>
+                        </Label.Text>
+                    </Label>
+                    <Label Grid.Column="1" Text="{Binding Name}">
                         <Label.GestureRecognizers>
                             <TapGestureRecognizer 
                                 Command="{Binding Source={x:Reference this}, Path=ItemTappedCommand}"
