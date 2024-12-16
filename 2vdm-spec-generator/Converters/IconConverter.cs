@@ -15,7 +15,7 @@ namespace _2vdm_spec_generator.Converters
             {
                 if (item is FileItem)
                 {
-                    return "≡";
+                    return "≡ ";
                 }
                 else if (item is DirectoryItem)
                 {
@@ -27,10 +27,10 @@ namespace _2vdm_spec_generator.Converters
                         var nextItem = items[currentIndex + 1];
                         if (nextItem.FullPath.StartsWith(item.FullPath + Path.DirectorySeparatorChar))
                         {
-                            return "∨";
+                            return "∨ ";
                         }
                     }
-                    return ">";
+                    return "> ";
                 }
             }
             return string.Empty;
