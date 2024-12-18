@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.Maui.Controls;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using _2vdm_spec_generator.Services;
 
 namespace _2vdm_spec_generator.ViewModel
 {
@@ -33,6 +34,9 @@ namespace _2vdm_spec_generator.ViewModel
 
         [ObservableProperty]
         string selectedFileContent;
+
+        [ObservableProperty]
+        string vdmContent;
 
         [RelayCommand]
         async Task SelectFolder()
@@ -204,5 +208,17 @@ namespace _2vdm_spec_generator.ViewModel
         //         }
         //     }
         // }
+
+        [RelayCommand]
+        void ConvertToVdm()
+        {
+            if (string.IsNullOrEmpty(SelectedFileContent))
+            {
+                return;
+            }
+
+            var converter = new MarkdownToVdmConverter();
+            VdmContent = converter.ConvertToVdm(SelectedFileContent);
+        }
     }
 }

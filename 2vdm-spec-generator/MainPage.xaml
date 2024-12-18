@@ -8,7 +8,7 @@
              xmlns:models="clr-namespace:_2vdm_spec_generator.Models">
 
     <Grid RowDefinitions="Auto, *"
-          ColumnDefinitions="300, .25*"
+          ColumnDefinitions="300, .25*, .25*"
           Padding="10">
 
         <!--ファイルツリー-->
@@ -31,12 +31,21 @@
                Padding="10"/>
         </ScrollView>
 
-    <!-- <Button Text="ツリー構造を表示"
-        Command="{Binding PrintTreeItemsCommand}"
-        Grid.Column="0"
-        HeightRequest="40"
-        Margin="0,5,0,5"
-        VerticalOptions="Start"/> -->
+        <!-- VDM++変換ボタン -->
+        <Button Text="VDM仕様に変換"
+                Command="{Binding ConvertToVdmCommand}"
+                Grid.Row="0"
+                Grid.Column="1"
+                HeightRequest="40"
+                Margin="10,5,0,5"
+                VerticalOptions="Start"/>
+        
+        <!-- VDM++表示エリア -->
+        <ScrollView Grid.Row="1" 
+                    Grid.Column="2">
+            <Label Text="{Binding VdmContent}"
+                   Padding="10"/>
+        </ScrollView>
     </Grid>
 
 </ContentPage>
