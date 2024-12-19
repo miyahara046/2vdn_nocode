@@ -43,10 +43,10 @@ namespace _2vdm_spec_generator.ViewModel
         string selectedFileContent;
 
         [ObservableProperty]
-        string vdmContent;
+        private string selectedFilePath;
 
         [ObservableProperty]
-        private string selectedFilePath;
+        string vdmContent;
 
         [RelayCommand]
         async Task SelectFolder()
@@ -443,6 +443,26 @@ namespace _2vdm_spec_generator.ViewModel
 
             // TreeItemsを新しいコレクションで更新
             TreeItems = newTreeItems;
+        }
+
+        [RelayCommand]
+        async Task SaveFile()
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(SelectedFilePath))
+                {
+                    await Shell.Current.DisplayAlert("エラー", "保存するファイルが選択されていません。", "OK");
+                    return;
+                }
+
+                await File.WriteAllTextAsync(SelectedFilePath, SelectedFileContent);
+                await Shell.Current.DisplayAlert("成功", "ファイルを保存しました。", "OK");
+            }
+            catch (Exception ex)
+            {
+                await Shell.Current.DisplayAlert("エラー", $"ファイルの保存中にエラーが発生しました: {ex.Message}", "OK");
+            }
         }
     }
 }
