@@ -48,6 +48,12 @@
                                 HeightRequest="40"
                                 Margin="0,5,0,5"
                                 VerticalOptions="Start"/>
+
+                        <Button Text="VDM++記述を保存"
+                                Command="{Binding SaveVdmCommand}"
+                                HeightRequest="40"
+                                Margin="0,5,0,5"
+                                VerticalOptions="Start"/>
                 </StackLayout>
 
                 <!-- VDM++表示エリア -->

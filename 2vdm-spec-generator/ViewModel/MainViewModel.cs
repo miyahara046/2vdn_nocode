@@ -48,6 +48,9 @@ namespace _2vdm_spec_generator.ViewModel
         [ObservableProperty]
         string vdmContent;
 
+        [ObservableProperty]
+        private string vdmFilePath;
+
         [RelayCommand]
         async Task SelectFolder()
         {
@@ -235,6 +238,12 @@ namespace _2vdm_spec_generator.ViewModel
             if (string.IsNullOrEmpty(SelectedFileContent))
             {
                 return;
+            }
+
+            // VDM++ファイルのパスを生成
+            if (!string.IsNullOrEmpty(SelectedFilePath))
+            {
+                VdmFilePath = Path.ChangeExtension(SelectedFilePath, ".vdmpp");
             }
 
             var converter = new MarkdownToVdmConverter();
@@ -463,6 +472,47 @@ namespace _2vdm_spec_generator.ViewModel
             catch (Exception ex)
             {
                 await Shell.Current.DisplayAlert("エラー", $"ファイルの保存中にエラーが発生しました: {ex.Message}", "OK");
+            }
+        }
+
+        [RelayCommand]
+        async Task SaveVdm()
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(VdmContent))
+                {
+                    await Shell.Current.DisplayAlert("エラー", "保存するVDM++記述がありません。", "OK");
+                    return;
+                }
+
+                if (string.IsNullOrEmpty(VdmFilePath))
+                {
+                    await Shell.Current.DisplayAlert("エラー", "VDM++ファイルのパスが設定されていません。", "OK");
+                    return;
+                }
+
+                // ファイルを保存
+                await File.WriteAllTextAsync(VdmFilePath, VdmContent);
+
+                // LoadedItemsに新しいファイルを追加
+                var fileInfo = new FileInfo(VdmFilePath);
+                var fileItem = new FileItem
+                {
+                    Name = fileInfo.Name,
+                    FullPath = fileInfo.FullName,
+                    Content = VdmContent
+                };
+                LoadedItems.Add(fileItem);
+
+                // TreeItemsを更新
+                UpdateTreeItems();
+
+                await Shell.Current.DisplayAlert("成功", "VDM++記述を保存しました。", "OK");
+            }
+            catch (Exception ex)
+            {
+                await Shell.Current.DisplayAlert("エラー", $"VDM++記述の保存中にエラーが発生しました: {ex.Message}", "OK");
             }
         }
     }
