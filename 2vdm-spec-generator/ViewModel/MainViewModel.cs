@@ -89,16 +89,19 @@ namespace _2vdm_spec_generator.ViewModel
             var dirInfo = new DirectoryInfo(path);
 
             // ファイルの場合
-            // 基底部
-            if (fileInfo.Exists && fileInfo.Extension.ToLower() == ".md")
+            if (fileInfo.Exists)
             {
-                // ファイル情報を追加
-                items.Add(new FileItem
+                var extension = fileInfo.Extension.ToLower();
+                if (extension == ".md" || extension == ".vdmpp")
                 {
-                    Name = fileInfo.Name,
-                    FullPath = fileInfo.FullName,
-                    Content = await File.ReadAllTextAsync(fileInfo.FullName)
-                });
+                    // ファイル情報を追加
+                    items.Add(new FileItem
+                    {
+                        Name = fileInfo.Name,
+                        FullPath = fileInfo.FullName,
+                        Content = await File.ReadAllTextAsync(fileInfo.FullName)
+                    });
+                }
             }
 
             // ディレクトリの場合
@@ -121,11 +124,6 @@ namespace _2vdm_spec_generator.ViewModel
                         await LoadFolder(subItem.FullName, items);
                     }
                 }
-                // else if (fsInfo is FileInfo file)
-                // {
-                //     // 再帰的にファイルを処理
-                //     await LoadFolder(file.FullName, items);
-                // }
             }
         }
 
@@ -254,7 +252,7 @@ namespace _2vdm_spec_generator.ViewModel
             {
                 Path = path,
                 NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.DirectoryName,
-                Filter = "*.md",  // Markdownファイルのみ監視
+                Filter = "*.*",  // すべてのファイルを監視
                 IncludeSubdirectories = true
             };
 
@@ -288,28 +286,31 @@ namespace _2vdm_spec_generator.ViewModel
                         {
                             RemoveItemFromCollections(e.FullPath);
                         }
-                        else if (e.ChangeType == WatcherChangeTypes.Changed && File.Exists(e.FullPath) &&
-                                 Path.GetExtension(e.FullPath).ToLower() == ".md")
+                        else if (e.ChangeType == WatcherChangeTypes.Changed && File.Exists(e.FullPath))
                         {
-                            // ファイルが完全に書き込まれるまで少し待機
-                            await Task.Delay(100);
-
-                            // ファイルの内容を更新
-                            var fileInfo = new FileInfo(e.FullPath);
-                            var content = await File.ReadAllTextAsync(fileInfo.FullName);
-
-                            // LoadedItemsの該当するファイルを更新
-                            var loadedFile = LoadedItems.OfType<FileItem>()
-                                .FirstOrDefault(f => f.FullPath == e.FullPath);
-                            if (loadedFile != null)
+                            var extension = Path.GetExtension(e.FullPath).ToLower();
+                            if (extension == ".md" || extension == ".vdmpp")
                             {
-                                loadedFile.Content = content;
-                            }
+                                // ファイルが完全に書き込まれるまで少し待機
+                                await Task.Delay(100);
 
-                            // 現在表示中のファイルが変更された場合、内容を更新
-                            if (e.FullPath == SelectedFilePath)
-                            {
-                                SelectedFileContent = content;
+                                // ファイルの内容を更新
+                                var fileInfo = new FileInfo(e.FullPath);
+                                var content = await File.ReadAllTextAsync(fileInfo.FullName);
+
+                                // LoadedItemsの該当するファイルを更新
+                                var loadedFile = LoadedItems.OfType<FileItem>()
+                                    .FirstOrDefault(f => f.FullPath == e.FullPath);
+                                if (loadedFile != null)
+                                {
+                                    loadedFile.Content = content;
+                                }
+
+                                // 現在表示中のファイルが変更された場合、内容を更新
+                                if (e.FullPath == SelectedFilePath)
+                                {
+                                    SelectedFileContent = content;
+                                }
                             }
                         }
                         else if (e.ChangeType == WatcherChangeTypes.Created)
