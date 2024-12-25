@@ -8,7 +8,7 @@
     Title="_2vdm_spec_generator">
 
     <ShellContent
-        Title="Home"
+        Title="ToVDM++Spec"
         ContentTemplate="{DataTemplate local:MainPage}"
         Route="MainPage" />
 

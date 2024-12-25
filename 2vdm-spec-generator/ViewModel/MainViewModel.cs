@@ -43,10 +43,13 @@ namespace _2vdm_spec_generator.ViewModel
         string selectedFileContent;
 
         [ObservableProperty]
+        private string selectedFilePath;
+
+        [ObservableProperty]
         string vdmContent;
 
         [ObservableProperty]
-        private string selectedFilePath;
+        private string vdmFilePath;
 
         [RelayCommand]
         async Task SelectFolder()
@@ -89,16 +92,19 @@ namespace _2vdm_spec_generator.ViewModel
             var dirInfo = new DirectoryInfo(path);
 
             // ファイルの場合
-            // 基底部
-            if (fileInfo.Exists && fileInfo.Extension.ToLower() == ".md")
+            if (fileInfo.Exists)
             {
-                // ファイル情報を追加
-                items.Add(new FileItem
+                var extension = fileInfo.Extension.ToLower();
+                if (extension == ".md" || extension == ".vdmpp")
                 {
-                    Name = fileInfo.Name,
-                    FullPath = fileInfo.FullName,
-                    Content = await File.ReadAllTextAsync(fileInfo.FullName)
-                });
+                    // ファイル情報を追加
+                    items.Add(new FileItem
+                    {
+                        Name = fileInfo.Name,
+                        FullPath = fileInfo.FullName,
+                        Content = await File.ReadAllTextAsync(fileInfo.FullName)
+                    });
+                }
             }
 
             // ディレクトリの場合
@@ -121,11 +127,6 @@ namespace _2vdm_spec_generator.ViewModel
                         await LoadFolder(subItem.FullName, items);
                     }
                 }
-                // else if (fsInfo is FileInfo file)
-                // {
-                //     // 再帰的にファイルを処理
-                //     await LoadFolder(file.FullName, items);
-                // }
             }
         }
 
@@ -144,13 +145,13 @@ namespace _2vdm_spec_generator.ViewModel
                         TreeItems[nextIndex].FullPath.StartsWith(item.FullPath + Path.DirectorySeparatorChar))
                     {
                         // 子要素が表示されている場合は、それらを削除
-                        var tempItems = new ObservableCollection<FileSystemItem>(TreeItems);
-                        while (nextIndex < tempItems.Count &&
-                            tempItems[nextIndex].FullPath.StartsWith(item.FullPath + Path.DirectorySeparatorChar))
+                        //var tempItems = new ObservableCollection<FileSystemItem>(TreeItems);
+                        while (nextIndex < TreeItems.Count &&
+                            TreeItems[nextIndex].FullPath.StartsWith(item.FullPath + Path.DirectorySeparatorChar))
                         {
-                            tempItems.RemoveAt(nextIndex);
+                            TreeItems.RemoveAt(nextIndex);
                         }
-                        TreeItems = tempItems;  // コレクション全体を更新して変更を通知
+                        //TreeItems = tempItems;  // コレクション全体を更新して変更を通知
                     }
                     else
                     {
@@ -162,14 +163,12 @@ namespace _2vdm_spec_generator.ViewModel
 
                         if (childItems.Any())
                         {
-                            // 一時的なリストを作成して一括で更新
-                            var newItems = new ObservableCollection<FileSystemItem>(TreeItems);
+                            //// ツリー用リストに子要素を追加
                             foreach (var child in childItems)
                             {
                                 currentIndex++;
-                                newItems.Insert(currentIndex, child);
+                                TreeItems.Insert(currentIndex, child);
                             }
-                            TreeItems = newItems;
                         }
                         else
                         {
@@ -202,41 +201,18 @@ namespace _2vdm_spec_generator.ViewModel
         //    }
         //}
 
-        // [RelayCommand]
-        // void PrintTreeItems()
-        // {
-        //     foreach (var item in treeItems)
-        //     {
-        //         Console.WriteLine($"アイテム名: {item.Name}");
-
-        //         if (item is DirectoryItem dirItem)
-        //         {
-        //             PrintChildren(dirItem.Children, 1);
-        //         }
-        //     }
-        // }
-
-        // private void PrintChildren(ObservableCollection<FileSystemItem> items, int level)
-        // {
-        //     string indent = new string(' ', level * 2);
-
-        //     foreach (var item in items)
-        //     {
-        //         Console.WriteLine($"{indent}アイテム名: {item.Name}");
-
-        //         if (item is DirectoryItem dirItem)
-        //         {
-        //             PrintChildren(dirItem.Children, level + 1);
-        //         }
-        //     }
-        // }
-
         [RelayCommand]
         void ConvertToVdm()
         {
             if (string.IsNullOrEmpty(SelectedFileContent))
             {
                 return;
+            }
+
+            // VDM++ファイルのパスを生成
+            if (!string.IsNullOrEmpty(SelectedFilePath))
+            {
+                VdmFilePath = Path.ChangeExtension(SelectedFilePath, ".vdmpp");
             }
 
             var converter = new MarkdownToVdmConverter();
@@ -254,7 +230,7 @@ namespace _2vdm_spec_generator.ViewModel
             {
                 Path = path,
                 NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.DirectoryName,
-                Filter = "*.md",  // Markdownファイルのみ監視
+                Filter = "*.*",  // すべてのファイルを監視
                 IncludeSubdirectories = true
             };
 
@@ -288,28 +264,31 @@ namespace _2vdm_spec_generator.ViewModel
                         {
                             RemoveItemFromCollections(e.FullPath);
                         }
-                        else if (e.ChangeType == WatcherChangeTypes.Changed && File.Exists(e.FullPath) &&
-                                 Path.GetExtension(e.FullPath).ToLower() == ".md")
+                        else if (e.ChangeType == WatcherChangeTypes.Changed && File.Exists(e.FullPath))
                         {
-                            // ファイルが完全に書き込まれるまで少し待機
-                            await Task.Delay(100);
-
-                            // ファイルの内容を更新
-                            var fileInfo = new FileInfo(e.FullPath);
-                            var content = await File.ReadAllTextAsync(fileInfo.FullName);
-
-                            // LoadedItemsの該当するファイルを更新
-                            var loadedFile = LoadedItems.OfType<FileItem>()
-                                .FirstOrDefault(f => f.FullPath == e.FullPath);
-                            if (loadedFile != null)
+                            var extension = Path.GetExtension(e.FullPath).ToLower();
+                            if (extension == ".md" || extension == ".vdmpp")
                             {
-                                loadedFile.Content = content;
-                            }
+                                // ファイルが完全に書き込まれるまで少し待機
+                                await Task.Delay(100);
 
-                            // 現在表示中のファイルが変更された場合、内容を更新
-                            if (e.FullPath == SelectedFilePath)
-                            {
-                                SelectedFileContent = content;
+                                // ファイルの内容を更新
+                                var fileInfo = new FileInfo(e.FullPath);
+                                var content = await File.ReadAllTextAsync(fileInfo.FullName);
+
+                                // LoadedItemsの該当するファイルを更新
+                                var loadedFile = LoadedItems.OfType<FileItem>()
+                                    .FirstOrDefault(f => f.FullPath == e.FullPath);
+                                if (loadedFile != null)
+                                {
+                                    loadedFile.Content = content;
+                                }
+
+                                // 現在表示中のファイルが変更された場合、内容を更新
+                                if (e.FullPath == SelectedFilePath)
+                                {
+                                    SelectedFileContent = content;
+                                }
                             }
                         }
                         else if (e.ChangeType == WatcherChangeTypes.Created)
@@ -443,6 +422,67 @@ namespace _2vdm_spec_generator.ViewModel
 
             // TreeItemsを新しいコレクションで更新
             TreeItems = newTreeItems;
+        }
+
+        [RelayCommand]
+        async Task SaveFile()
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(SelectedFilePath))
+                {
+                    await Shell.Current.DisplayAlert("エラー", "保存するファイルが選択されていません。", "OK");
+                    return;
+                }
+
+                await File.WriteAllTextAsync(SelectedFilePath, SelectedFileContent);
+                await Shell.Current.DisplayAlert("成功", "ファイルを保存しました。", "OK");
+            }
+            catch (Exception ex)
+            {
+                await Shell.Current.DisplayAlert("エラー", $"ファイルの保存中にエラーが発生しました: {ex.Message}", "OK");
+            }
+        }
+
+        [RelayCommand]
+        async Task SaveVdm()
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(VdmContent))
+                {
+                    await Shell.Current.DisplayAlert("エラー", "保存するVDM++記述がありません。", "OK");
+                    return;
+                }
+
+                if (string.IsNullOrEmpty(VdmFilePath))
+                {
+                    await Shell.Current.DisplayAlert("エラー", "VDM++ファイルのパスが設定されていません。", "OK");
+                    return;
+                }
+
+                // ファイルを保存
+                await File.WriteAllTextAsync(VdmFilePath, VdmContent);
+
+                // LoadedItemsに新しいファイルを追加
+                var fileInfo = new FileInfo(VdmFilePath);
+                var fileItem = new FileItem
+                {
+                    Name = fileInfo.Name,
+                    FullPath = fileInfo.FullName,
+                    Content = VdmContent
+                };
+                LoadedItems.Add(fileItem);
+
+                // TreeItemsを更新
+                UpdateTreeItems();
+
+                await Shell.Current.DisplayAlert("成功", "VDM++記述を保存しました。", "OK");
+            }
+            catch (Exception ex)
+            {
+                await Shell.Current.DisplayAlert("エラー", $"VDM++記述の保存中にエラーが発生しました: {ex.Message}", "OK");
+            }
         }
     }
 }
