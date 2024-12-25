@@ -145,13 +145,13 @@ namespace _2vdm_spec_generator.ViewModel
                         TreeItems[nextIndex].FullPath.StartsWith(item.FullPath + Path.DirectorySeparatorChar))
                     {
                         // 子要素が表示されている場合は、それらを削除
-                        var tempItems = new ObservableCollection<FileSystemItem>(TreeItems);
-                        while (nextIndex < tempItems.Count &&
-                            tempItems[nextIndex].FullPath.StartsWith(item.FullPath + Path.DirectorySeparatorChar))
+                        //var tempItems = new ObservableCollection<FileSystemItem>(TreeItems);
+                        while (nextIndex < TreeItems.Count &&
+                            TreeItems[nextIndex].FullPath.StartsWith(item.FullPath + Path.DirectorySeparatorChar))
                         {
-                            tempItems.RemoveAt(nextIndex);
+                            TreeItems.RemoveAt(nextIndex);
                         }
-                        TreeItems = tempItems;  // コレクション全体を更新して変更を通知
+                        //TreeItems = tempItems;  // コレクション全体を更新して変更を通知
                     }
                     else
                     {
@@ -163,14 +163,12 @@ namespace _2vdm_spec_generator.ViewModel
 
                         if (childItems.Any())
                         {
-                            // 一時的なリストを作成して一括で更新
-                            var newItems = new ObservableCollection<FileSystemItem>(TreeItems);
+                            //// ツリー用リストに子要素を追加
                             foreach (var child in childItems)
                             {
                                 currentIndex++;
-                                newItems.Insert(currentIndex, child);
+                                TreeItems.Insert(currentIndex, child);
                             }
-                            TreeItems = newItems;
                         }
                         else
                         {
