@@ -203,35 +203,6 @@ namespace _2vdm_spec_generator.ViewModel
         //    }
         //}
 
-        // [RelayCommand]
-        // void PrintTreeItems()
-        // {
-        //     foreach (var item in treeItems)
-        //     {
-        //         Console.WriteLine($"アイテム名: {item.Name}");
-
-        //         if (item is DirectoryItem dirItem)
-        //         {
-        //             PrintChildren(dirItem.Children, 1);
-        //         }
-        //     }
-        // }
-
-        // private void PrintChildren(ObservableCollection<FileSystemItem> items, int level)
-        // {
-        //     string indent = new string(' ', level * 2);
-
-        //     foreach (var item in items)
-        //     {
-        //         Console.WriteLine($"{indent}アイテム名: {item.Name}");
-
-        //         if (item is DirectoryItem dirItem)
-        //         {
-        //             PrintChildren(dirItem.Children, level + 1);
-        //         }
-        //     }
-        // }
-
         [RelayCommand]
         void ConvertToVdm()
         {
