@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Windows.Input;
 using _2vdm_spec_generator.Models;
+using CommunityToolkit.Maui.Behaviors;
 
 namespace _2vdm_spec_generator.Controls
 {
@@ -39,6 +40,14 @@ namespace _2vdm_spec_generator.Controls
         public TreeView()
         {
             InitializeComponent();
+            
+            // TouchBehaviorの設定
+            var touchBehavior = new TouchBehavior
+            {
+                HoveredBackgroundColor = Colors.AliceBlue,
+                PressedBackgroundColor = Colors.LightGray,
+                DefaultBackgroundColor = Colors.Transparent
+            };
         }
     }
 }
