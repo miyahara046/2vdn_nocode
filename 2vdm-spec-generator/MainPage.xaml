@@ -54,6 +54,12 @@
                                 HeightRequest="40"
                                 Margin="0,5,0,5"
                                 VerticalOptions="Start"/>
+
+                        <Button Text="選択ファイルを削除"
+                                Command="{Binding DeleteSelectedFileCommand}"
+                                HeightRequest="40"
+                                Margin="0,5,0,5"
+                                VerticalOptions="Start"/>
                 </StackLayout>
 
                 <!-- VDM++表示エリア -->
