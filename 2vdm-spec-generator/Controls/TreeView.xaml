@@ -4,6 +4,7 @@
              xmlns:models="clr-namespace:_2vdm_spec_generator.Models"
              xmlns:controls="clr-namespace:_2vdm_spec_generator.Controls"
              xmlns:converters="clr-namespace:_2vdm_spec_generator.Converters"
+             xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
              x:Class="_2vdm_spec_generator.Controls.TreeView"
              x:Name="this">
 
@@ -17,28 +18,40 @@
     <CollectionView ItemsSource="{Binding Items, Source={x:Reference this}}">
         <CollectionView.ItemTemplate>
             <DataTemplate x:DataType="models:FileSystemItem">
-                <Grid ColumnDefinitions="Auto,*">
-                    <Label Grid.Column="0">
-                        <Label.Margin>
-                            <MultiBinding Converter="{StaticResource IndentConverter}">
-                                <Binding Path="FullPath"/>
-                                <Binding Source="{x:Reference this}" Path="BindingContext.ProjectRootPath"/>
-                            </MultiBinding>
-                        </Label.Margin>
-                        <Label.Text>
-                            <MultiBinding Converter="{StaticResource IconConverter}">
-                                <Binding Path="." />
-                                <Binding Source="{x:Reference this}" Path="Items" />
-                            </MultiBinding>
-                        </Label.Text>
-                    </Label>
-                    <Label Grid.Column="1" Text="{Binding Name}">
-                        <Label.GestureRecognizers>
-                            <TapGestureRecognizer 
-                                Command="{Binding Source={x:Reference this}, Path=ItemTappedCommand}"
-                                CommandParameter="{Binding .}"/>
-                        </Label.GestureRecognizers>
-                    </Label>
+                <Grid>
+                    <Grid.GestureRecognizers>
+                        <TapGestureRecognizer 
+                            Command="{Binding Source={x:Reference this}, Path=ItemTappedCommand}"
+                            CommandParameter="{Binding .}"/>
+                    </Grid.GestureRecognizers>
+                    <Grid.Behaviors>
+                        <toolkit:TouchBehavior
+                            HoveredBackgroundColor="{AppThemeBinding 
+                                Light={StaticResource Gray100}, 
+                                Dark={StaticResource Gray500}}"
+                            PressedBackgroundColor="{AppThemeBinding 
+                                Light={StaticResource Gray200}, 
+                                Dark={StaticResource Gray600}}"
+                            DefaultBackgroundColor="Transparent"/>
+                    </Grid.Behaviors>
+
+                    <Grid ColumnDefinitions="Auto,*" BackgroundColor="Transparent">
+                        <Label Grid.Column="0">
+                            <Label.Margin>
+                                <MultiBinding Converter="{StaticResource IndentConverter}">
+                                    <Binding Path="FullPath"/>
+                                    <Binding Source="{x:Reference this}" Path="BindingContext.ProjectRootPath"/>
+                                </MultiBinding>
+                            </Label.Margin>
+                            <Label.Text>
+                                <MultiBinding Converter="{StaticResource IconConverter}">
+                                    <Binding Path="." />
+                                    <Binding Source="{x:Reference this}" Path="Items" />
+                                </MultiBinding>
+                            </Label.Text>
+                        </Label>
+                        <Label Grid.Column="1" Text="{Binding Name}"/>
+                    </Grid>
                 </Grid>
             </DataTemplate>
         </CollectionView.ItemTemplate>

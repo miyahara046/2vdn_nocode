@@ -559,5 +559,54 @@ namespace _2vdm_spec_generator.ViewModel
             SortFileSystemItems(LoadedItems);
             SortFileSystemItems(TreeItems);
         }
+
+        [RelayCommand]
+        async Task DeleteSelectedFile()
+        {
+            if (string.IsNullOrEmpty(SelectedFilePath))
+            {
+                await Shell.Current.DisplayAlert("エラー", "削除するファイルが選択されていません。", "OK");
+                return;
+            }
+
+            try
+            {
+                // ユーザーに確認
+                bool answer = await Shell.Current.DisplayAlert(
+                    "確認", 
+                    $"ファイル '{Path.GetFileName(SelectedFilePath)}' を削除してもよろしいですか？", 
+                    "はい", 
+                    "いいえ");
+
+                if (!answer) return;
+
+                // ファイルをローカル環境から削除
+                File.Delete(SelectedFilePath);
+
+                // LoadedItemsから削除
+                var loadedItem = LoadedItems.FirstOrDefault(i => i.FullPath == SelectedFilePath);
+                if (loadedItem != null)
+                {
+                    LoadedItems.Remove(loadedItem);
+                }
+
+                // TreeItemsから削除
+                var treeItem = TreeItems.FirstOrDefault(i => i.FullPath == SelectedFilePath);
+                if (treeItem != null)
+                {
+                    TreeItems.Remove(treeItem);
+                }
+
+                // 選択状態をクリア
+                SelectedFilePath = null;
+                SelectedFileContent = null;
+
+                await Shell.Current.DisplayAlert("成功", "ファイルを削除しました。", "OK");
+            }
+            catch (Exception ex)
+            {
+                await Shell.Current.DisplayAlert("エラー", $"ファイルの削除中にエラーが発生しました: {ex.Message}", "OK");
+            }
+        }
     }
 }
