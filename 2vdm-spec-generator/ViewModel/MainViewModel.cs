@@ -52,6 +52,9 @@ namespace _2vdm_spec_generator.ViewModel
         [ObservableProperty]
         private string vdmFilePath;
 
+        [ObservableProperty]
+        private string vdmSourceFilePath;  // VDM++変換元のMarkdownファイルパス
+
         [RelayCommand]
         async Task SelectFolder()
         {
@@ -212,6 +215,9 @@ namespace _2vdm_spec_generator.ViewModel
             {
                 return;
             }
+
+            // VDM++変換元のファイルパスを保存
+            VdmSourceFilePath = SelectedFilePath;
 
             // VDM++ファイルのパスを生成
             if (!string.IsNullOrEmpty(SelectedFilePath))
@@ -504,14 +510,14 @@ namespace _2vdm_spec_generator.ViewModel
                 };
 
                 // LoadedItemsとTreeItemsに追加
-                if (!string.IsNullOrEmpty(SelectedFilePath))
+                if (!string.IsNullOrEmpty(VdmSourceFilePath))
                 {
-                    var mdIndex = LoadedItems.ToList().FindIndex(i => i.FullPath == SelectedFilePath);
+                    var mdIndex = LoadedItems.ToList().FindIndex(i => i.FullPath == VdmSourceFilePath);
                     if (mdIndex != -1)
                     {
                         LoadedItems.Insert(mdIndex + 1, fileItem);
                         
-                        var treeIndex = TreeItems.ToList().FindIndex(i => i.FullPath == SelectedFilePath);
+                        var treeIndex = TreeItems.ToList().FindIndex(i => i.FullPath == VdmSourceFilePath);
                         if (treeIndex != -1)
                         {
                             TreeItems.Insert(treeIndex + 1, fileItem);
