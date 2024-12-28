@@ -10,6 +10,7 @@ using System.IO;
 using System.Threading.Tasks;
 using System.Threading;
 using Microsoft.Maui.ApplicationModel;
+using System.Linq;
 
 namespace _2vdm_spec_generator.ViewModel
 {
@@ -51,6 +52,9 @@ namespace _2vdm_spec_generator.ViewModel
         [ObservableProperty]
         private string vdmFilePath;
 
+        [ObservableProperty]
+        private string vdmSourceFilePath;  // VDM++変換元のMarkdownファイルパス
+
         [RelayCommand]
         async Task SelectFolder()
         {
@@ -63,6 +67,9 @@ namespace _2vdm_spec_generator.ViewModel
                     LoadedItems.Clear();
                     // 選択フォルダ以下のすべてのディレクトリとフォルダを読み込む
                     await LoadFolder(ProjectRootPath, LoadedItems);
+                    
+                    // ツリーを辞書順にソート
+                    SortFileSystemItems(LoadedItems);
 
                     // TreeItemsに選択フォルダ(プロジェクトルート)直下のアイテムのみを追加
                     var rootItems = LoadedItems.Where(i =>
@@ -163,7 +170,7 @@ namespace _2vdm_spec_generator.ViewModel
 
                         if (childItems.Any())
                         {
-                            //// ツリー用リストに子要素を追加
+                            // ツリー用リストに子要素を追加
                             foreach (var child in childItems)
                             {
                                 currentIndex++;
@@ -208,6 +215,9 @@ namespace _2vdm_spec_generator.ViewModel
             {
                 return;
             }
+
+            // VDM++変換元のファイルパスを保存
+            VdmSourceFilePath = SelectedFilePath;
 
             // VDM++ファイルのパスを生成
             if (!string.IsNullOrEmpty(SelectedFilePath))
@@ -371,6 +381,11 @@ namespace _2vdm_spec_generator.ViewModel
 
         private void UpdateTreeItems()
         {
+            if (string.IsNullOrEmpty(ProjectRootPath))
+            {
+                return;  // プロジェクトルートパスが設定されていない場合は処理を中断
+            }
+
             // 現在表示されているディレクトリパスを取得
             var displayedPaths = TreeItems
                 .OfType<DirectoryItem>()
@@ -379,14 +394,20 @@ namespace _2vdm_spec_generator.ViewModel
 
             // LoadedItemsから、表示すべきアイテムを取得
             var itemsToShow = LoadedItems.Where(i =>
-                // ルートレベルのアイテム
-                (!i.FullPath.Substring(ProjectRootPath.Length + 1).Contains(Path.DirectorySeparatorChar))
-                ||
-                // または、表示中のディレクトリの直下のアイテム
-                displayedPaths.Any(p =>
-                    i.FullPath.StartsWith(p + Path.DirectorySeparatorChar) &&
-                    !i.FullPath.Substring(p.Length + 1).Contains(Path.DirectorySeparatorChar))
-            ).ToList();
+            {
+                try
+                {
+                    return (!i.FullPath.Substring(ProjectRootPath.Length + 1).Contains(Path.DirectorySeparatorChar))
+                        ||
+                        displayedPaths.Any(p =>
+                            i.FullPath.StartsWith(p + Path.DirectorySeparatorChar) &&
+                            !i.FullPath.Substring(p.Length + 1).Contains(Path.DirectorySeparatorChar));
+                }
+                catch
+                {
+                    return false;  // パス処理でエラーが発生した場合はそのアイテムを除外
+                }
+            }).ToList();
 
             // 新しいTreeItemsコレクションを作成
             var newTreeItems = new ObservableCollection<FileSystemItem>();
@@ -461,10 +482,25 @@ namespace _2vdm_spec_generator.ViewModel
                     return;
                 }
 
+                // 既存のファイルをLoadedItemsとTreeItemsから削除
+                var existingLoadedItem = LoadedItems.OfType<FileItem>()
+                    .FirstOrDefault(f => f.FullPath == VdmFilePath);
+                if (existingLoadedItem != null)
+                {
+                    LoadedItems.Remove(existingLoadedItem);
+                }
+
+                var existingTreeItem = TreeItems.OfType<FileItem>()
+                    .FirstOrDefault(f => f.FullPath == VdmFilePath);
+                if (existingTreeItem != null)
+                {
+                    TreeItems.Remove(existingTreeItem);
+                }
+
                 // ファイルを保存
                 await File.WriteAllTextAsync(VdmFilePath, VdmContent);
 
-                // LoadedItemsに新しいファイルを追加
+                // 新しいファイルアイテムを作成
                 var fileInfo = new FileInfo(VdmFilePath);
                 var fileItem = new FileItem
                 {
@@ -472,10 +508,32 @@ namespace _2vdm_spec_generator.ViewModel
                     FullPath = fileInfo.FullName,
                     Content = VdmContent
                 };
-                LoadedItems.Add(fileItem);
 
-                // TreeItemsを更新
-                UpdateTreeItems();
+                // LoadedItemsとTreeItemsに追加
+                if (!string.IsNullOrEmpty(VdmSourceFilePath))
+                {
+                    var mdIndex = LoadedItems.ToList().FindIndex(i => i.FullPath == VdmSourceFilePath);
+                    if (mdIndex != -1)
+                    {
+                        LoadedItems.Insert(mdIndex + 1, fileItem);
+                        
+                        var treeIndex = TreeItems.ToList().FindIndex(i => i.FullPath == VdmSourceFilePath);
+                        if (treeIndex != -1)
+                        {
+                            TreeItems.Insert(treeIndex + 1, fileItem);
+                        }
+                    }
+                    else
+                    {
+                        LoadedItems.Add(fileItem);
+                        TreeItems.Add(fileItem);
+                    }
+                }
+                else
+                {
+                    LoadedItems.Add(fileItem);
+                    TreeItems.Add(fileItem);
+                }
 
                 await Shell.Current.DisplayAlert("成功", "VDM++記述を保存しました。", "OK");
             }
@@ -483,6 +541,23 @@ namespace _2vdm_spec_generator.ViewModel
             {
                 await Shell.Current.DisplayAlert("エラー", $"VDM++記述の保存中にエラーが発生しました: {ex.Message}", "OK");
             }
+        }
+
+        private void SortFileSystemItems(ObservableCollection<FileSystemItem> items)
+        {
+            var sortedItems = items.OrderBy(item => item.Name).ToList();
+            items.Clear();
+            foreach (var item in sortedItems)
+            {
+                items.Add(item);
+            }
+        }
+
+        [RelayCommand]
+        void SortItems()
+        {
+            SortFileSystemItems(LoadedItems);
+            SortFileSystemItems(TreeItems);
         }
     }
 }
