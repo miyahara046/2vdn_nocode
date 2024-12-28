@@ -25,12 +25,9 @@
                                    ItemTappedCommand="{Binding SelectItemCommand}"/>
 
                 <!-- ファイル内容表示/編集 -->
-                <ScrollView Grid.Row="1"
-                            Grid.Column="1">
-                        <Editor Text="{Binding SelectedFileContent}"
-                                IsReadOnly="False"
-                                AutoSize="TextChanges"/>
-                </ScrollView>
+                <controls:LineNumberEditor Grid.Row="1"
+                                           Grid.Column="1"
+                                           EditorText="{Binding SelectedFileContent}"/>
 
                 <!-- ボタンエリア -->
                 <StackLayout Grid.Row="0"
