@@ -15,7 +15,8 @@
         
         <ScrollView x:Name="EditorScroll" 
                    Grid.Column="1"
-                   Scrolled="OnEditorScrolled">
+                   Scrolled="OnEditorScrolled"
+                   Orientation="Both">
             <Editor x:Name="MainEditor"
                    Text="{Binding EditorText, Source={x:Reference this}}"
                    TextChanged="OnTextChanged"
