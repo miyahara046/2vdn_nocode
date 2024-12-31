@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentView xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="_2vdm_spec_generator.Controls.LineNumberEditor">
+    <Grid ColumnDefinitions="Auto,*">
+        <ScrollView x:Name="LineNumberScroll" 
+                   Grid.Column="0"
+                   VerticalScrollBarVisibility="Never">
+            <Label x:Name="LineNumbers"
+                   TextColor="Gray"
+                   Padding="5,6,5,0"
+                   BackgroundColor="{AppThemeBinding Light={StaticResource Gray100}, Dark={StaticResource Gray900}}"
+                   HorizontalTextAlignment="End"/>
+        </ScrollView>
+        
+        <ScrollView x:Name="EditorScroll" 
+                   Grid.Column="1"
+                   Scrolled="OnEditorScrolled"
+                   Orientation="Both">
+            <Editor x:Name="MainEditor"
+                   Text="{Binding EditorText, Source={x:Reference this}}"
+                   TextChanged="OnTextChanged"
+                   AutoSize="TextChanges"/>
+        </ScrollView>
+    </Grid>
+</ContentView> 
