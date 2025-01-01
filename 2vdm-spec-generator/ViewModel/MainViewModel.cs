@@ -147,7 +147,8 @@ namespace _2vdm_spec_generator.ViewModel
         async Task SelectItem(FileSystemItem item)
         {
             if (item is DirectoryItem dirItem)
-            {
+            {   
+                selectedItemPath = dirItem.FullPath;  // 選択アイテムのパスを保存
                 // 現在のアイテムのインデックスを取得
                 var currentIndex = TreeItems.IndexOf(item);
                 if (currentIndex != -1)
@@ -193,8 +194,8 @@ namespace _2vdm_spec_generator.ViewModel
             else if (item is FileItem fileItem)
             {
                 try
-                {
-                    SelectedFilePath = fileItem.FullPath;  // パスを保存
+                {   selectedItemPath = fileItem.FullPath;  // 選択アイテムのパスを保存
+                    SelectedFilePath = fileItem.FullPath;  // 表示ファイルのパスを保存
                     var newContent = await File.ReadAllTextAsync(fileItem.FullPath);
                     SelectedFileContent = newContent;
                 }
