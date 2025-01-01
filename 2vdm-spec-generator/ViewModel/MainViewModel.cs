@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using System.Threading;
 using Microsoft.Maui.ApplicationModel;
 using System.Linq;
+using System.Runtime.CompilerServices;
 
 namespace _2vdm_spec_generator.ViewModel
 {
@@ -145,7 +146,13 @@ namespace _2vdm_spec_generator.ViewModel
 
         [RelayCommand]
         async Task SelectItem(FileSystemItem item)
-        {
+        {   
+            // MDファイルとVDMファイルの不整合をなくすためにアイテム選択時にvdmContentを空にしておく
+            // こうすることで、SaveVDM実行時にvdmFilePathとselectedItemPathが対応したものになるはず
+            if (!string.IsNullOrEmpty(vdmContent))
+            {
+                VdmContent = string.Empty;
+            }
             if (item is DirectoryItem dirItem)
             {   
                 selectedItemPath = dirItem.FullPath;  // 選択アイテムのパスを保存
@@ -543,6 +550,12 @@ namespace _2vdm_spec_generator.ViewModel
                 }
 
                 await Shell.Current.DisplayAlert("成功", "VDM++記述を保存しました。", "OK");
+                // VDM保存時に開いているMDファイルも一緒に保存する。
+                // SelectItem内でアイテム選択の毎に、
+                // vdmContent = null;
+                // としているので、VDM保存時のVDMファイルとMDファイルは、対応するものであるはずだが、
+                // VDMへ変換後に、MDファイル側を編集&保存されたら、内容はズレてしまう。
+                await SaveFile();
             }
             catch (Exception ex)
             {
@@ -606,7 +619,7 @@ namespace _2vdm_spec_generator.ViewModel
 
                 // 選択状態をクリア
                 SelectedFilePath = null;
-                SelectedFileContent = null;
+                SelectedFileContent = string.Empty;
 
                 await Shell.Current.DisplayAlert("成功", "ファイルを削除しました。", "OK");
             }
