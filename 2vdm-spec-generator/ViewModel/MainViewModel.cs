@@ -55,6 +55,12 @@ namespace _2vdm_spec_generator.ViewModel
         [ObservableProperty]
         private string vdmSourceFilePath;  // VDM++変換元のMarkdownファイルパス
 
+        [ObservableProperty]
+        private string selectedItemPath;
+
+        [ObservableProperty]
+        private string newFileName;
+
         [RelayCommand]
         async Task SelectFolder()
         {
@@ -141,7 +147,8 @@ namespace _2vdm_spec_generator.ViewModel
         async Task SelectItem(FileSystemItem item)
         {
             if (item is DirectoryItem dirItem)
-            {
+            {   
+                selectedItemPath = dirItem.FullPath;  // 選択アイテムのパスを保存
                 // 現在のアイテムのインデックスを取得
                 var currentIndex = TreeItems.IndexOf(item);
                 if (currentIndex != -1)
@@ -187,8 +194,8 @@ namespace _2vdm_spec_generator.ViewModel
             else if (item is FileItem fileItem)
             {
                 try
-                {
-                    SelectedFilePath = fileItem.FullPath;  // パスを保存
+                {   selectedItemPath = fileItem.FullPath;  // 選択アイテムのパスを保存
+                    SelectedFilePath = fileItem.FullPath;  // 表示ファイルのパスを保存
                     var newContent = await File.ReadAllTextAsync(fileItem.FullPath);
                     SelectedFileContent = newContent;
                 }
@@ -606,6 +613,180 @@ namespace _2vdm_spec_generator.ViewModel
             catch (Exception ex)
             {
                 await Shell.Current.DisplayAlert("エラー", $"ファイルの削除中にエラーが発生しました: {ex.Message}", "OK");
+            }
+        }
+
+        [RelayCommand]
+        async Task CreateNewFile()
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(ProjectRootPath))
+                {
+                    await Shell.Current.DisplayAlert("エラー", "プロジェクトフォルダが選択されていません。", "OK");
+                    return;
+                }
+
+                if (string.IsNullOrEmpty(NewFileName))
+                {
+                    await Shell.Current.DisplayAlert("エラー", "ファイル名を入力してください。", "OK");
+                    return;
+                }
+
+                // 作成先のディレクトリパスを決定
+                string targetDirectory = ProjectRootPath;
+                
+                // 選択されているアイテムを取得
+                var selectedItem = LoadedItems.FirstOrDefault(i => i.FullPath == selectedItemPath);
+                
+                // // デバッグ用
+                // if (selectedItem != null)
+                // {
+                //     await Shell.Current.DisplayAlert("デバッグ情報", 
+                //         $"選択アイテムの型: {selectedItem.GetType().Name}\n" +
+                //         $"パス: {selectedItem.FullPath}\n" +
+                //         $"名前: {selectedItem.Name}", 
+                //         "OK");
+                // }
+                // else
+                // {
+                //     await Shell.Current.DisplayAlert("デバッグ情報", 
+                //         $"selectedItem is null\n" +
+                //         $"selectedItemPath: {selectedItemPath}", 
+                //         "OK");
+                // }
+
+                // 選択されているアイテムがFileItemの場合は警告を表示して終了
+                if (selectedItem is FileItem)
+                {
+                    await Shell.Current.DisplayAlert("エラー", "フォルダを選択してください。", "OK");
+                    return;
+                }
+                // 選択されているアイテムがDirectoryItemの場合は確認ダイアログを表示
+                else if (selectedItem is DirectoryItem)
+                {
+                    var dirName = Path.GetFileName(selectedItemPath);
+                    bool createInSelectedDir = await Shell.Current.DisplayAlert(
+                        "確認",
+                        $"[{dirName}]の中にmdファイルを作成しますか?",
+                        "はい",
+                        "いいえ");
+
+                    if (createInSelectedDir)
+                    {
+                        targetDirectory = selectedItemPath;
+                    }
+                }
+
+                // 拡張子が.mdでない場合は追加
+                string fileName = NewFileName;
+                if (!fileName.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
+                {
+                    fileName += ".md";
+                }
+
+                string newFilePath = Path.Combine(targetDirectory, fileName);
+
+                // 既存のファイルをチェック
+                if (File.Exists(newFilePath))
+                {
+                    await Shell.Current.DisplayAlert("エラー", "同名のファイルが既に存在します。", "OK");
+                    return;
+                }
+
+                // 空のファイルを作成
+                await File.WriteAllTextAsync(newFilePath, string.Empty);
+
+                // 新しいFileItemを作成
+                var fileItem = new FileItem
+                {
+                    Name = fileName,
+                    FullPath = newFilePath,
+                    Content = string.Empty
+                };
+
+                // LoadedItemsに追加
+                LoadedItems.Add(fileItem);
+
+                // TreeItemsに追加（選択されているディレクトリが展開されている場合のみ）
+                if (targetDirectory == ProjectRootPath)
+                {
+                    // ルートディレクトリの場合は直接追加
+                    TreeItems.Add(fileItem);
+                }
+                else
+                {
+                    // 選択されたディレクトリの子アイテムが表示されている場合のみ追加
+                    var parentDirIndex = TreeItems.ToList().FindIndex(i => i.FullPath == targetDirectory);
+                    if (parentDirIndex != -1 && 
+                        parentDirIndex + 1 < TreeItems.Count && 
+                        TreeItems[parentDirIndex + 1].FullPath.StartsWith(targetDirectory))
+                    {
+                        TreeItems.Insert(parentDirIndex + 1, fileItem);
+                    }
+                }
+
+                // ファイル名をクリア
+                NewFileName = string.Empty;
+
+                await Shell.Current.DisplayAlert("成功", "新しいファイルを作成しました。", "OK");
+            }
+            catch (Exception ex)
+            {
+                await Shell.Current.DisplayAlert("エラー", $"ファイルの作成中にエラーが発生しました: {ex.Message}", "OK");
+            }
+        }
+
+        [RelayCommand]
+        async Task SetNewFileName(string fileName)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(fileName))
+                {
+                    await Shell.Current.DisplayAlert("エラー", "ファイル名を入力してください。", "OK");
+                    return;
+                }
+
+                // 使用できない文字が含まれていないかチェック
+                var invalidChars = Path.GetInvalidFileNameChars();
+                if (fileName.Any(c => invalidChars.Contains(c)))
+                {
+                    await Shell.Current.DisplayAlert("エラー", "ファイル名に使用できない文字が含まれています。", "OK");
+                    return;
+                }
+
+                NewFileName = fileName;
+            }
+            catch (Exception ex)
+            {
+                await Shell.Current.DisplayAlert("エラー", $"ファイル名の設定中にエラーが発生しました: {ex.Message}", "OK");
+            }
+        }
+
+        [RelayCommand]
+        async Task ShowNewFileDialog()
+        {   
+            if (string.IsNullOrEmpty(ProjectRootPath))
+            {
+                await Shell.Current.DisplayAlert("エラー", "プロジェクトフォルダが選択されていません。", "OK");
+                return;
+            }
+
+            string result = await Shell.Current.DisplayPromptAsync(
+                "新規ファイル作成",
+                "ファイル名を入力してください",
+                "作成",
+                "キャンセル",
+                "例: specification");
+
+            if (!string.IsNullOrEmpty(result))
+            {
+                await SetNewFileName(result);
+                if (!string.IsNullOrEmpty(NewFileName))  // SetNewFileNameでのバリデーションが通った場合のみ
+                {
+                    await CreateNewFile();
+                }
             }
         }
     }

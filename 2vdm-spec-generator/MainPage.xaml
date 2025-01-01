@@ -34,6 +34,12 @@
                              Grid.Column="1"
                              Orientation="Horizontal"
                              Spacing="10">
+                        <Button Text="新規作成"
+                                Command="{Binding ShowNewFileDialogCommand}"
+                                HeightRequest="40"
+                                Margin="10,5,0,5"
+                                VerticalOptions="Start"/>
+
                         <Button Text="変更を保存"
                                 Command="{Binding SaveFileCommand}"
                                 HeightRequest="40"
