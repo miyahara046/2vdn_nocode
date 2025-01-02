@@ -10,10 +10,23 @@ namespace _2vdm_spec_generator.Controls
                 propertyChanged: OnEditorTextChanged,
                 defaultBindingMode: BindingMode.TwoWay);
 
+        public static readonly BindableProperty FontSizeProperty = BindableProperty.Create(
+            nameof(FontSize),
+            typeof(double),
+            typeof(LineNumberEditor),
+            14.0,  // デフォルト値
+            propertyChanged: OnFontSizeChanged);
+
         public string EditorText
         {
             get => (string)GetValue(EditorTextProperty);
             set => SetValue(EditorTextProperty, value);
+        }
+
+        public double FontSize
+        {
+            get => (double)GetValue(FontSizeProperty);
+            set => SetValue(FontSizeProperty, value);
         }
 
         public LineNumberEditor()
@@ -28,6 +41,15 @@ namespace _2vdm_spec_generator.Controls
             {
                 editor.MainEditor.Text = (string)newValue;
                 editor.UpdateLineNumbers();
+            }
+        }
+
+        private static void OnFontSizeChanged(BindableObject bindable, object oldValue, object newValue)
+        {
+            if (bindable is LineNumberEditor editor)
+            {
+                editor.MainEditor.FontSize = (double)newValue;
+                editor.LineNumbers.FontSize = (double)newValue;
             }
         }
 

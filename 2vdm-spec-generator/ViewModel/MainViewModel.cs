@@ -12,21 +12,45 @@ using System.Threading;
 using Microsoft.Maui.ApplicationModel;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System;
+using System.Windows.Input;
 
 namespace _2vdm_spec_generator.ViewModel
 {
     public partial class MainViewModel : ObservableObject
     {
-
         private readonly IFolderPicker _folderPicker;
         private FileSystemWatcher _watcher;
         private readonly object _fileLock = new object();
         private HashSet<string> _processingFiles = new HashSet<string>();
+        private double _fontSize = 14; // デフォルトサイズ
+
+        public double FontSize
+        {
+            get => _fontSize;
+            set
+            {
+                if (_fontSize != value)
+                {
+                    _fontSize = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public ICommand IncreaseFontSizeCommand { get; }
+        public ICommand DecreaseFontSizeCommand { get; }
+        public ICommand ResetFontSizeCommand { get; }
+
         public MainViewModel(IFolderPicker folderPicker)
         {
             _folderPicker = folderPicker;
             loadedItems = new ObservableCollection<FileSystemItem>();
             treeItems = new ObservableCollection<FileSystemItem>();
+
+            IncreaseFontSizeCommand = new Command(() => FontSize = Math.Min(20, FontSize + 2));
+            DecreaseFontSizeCommand = new Command(() => FontSize = Math.Max(10, FontSize - 2));
+            ResetFontSizeCommand = new Command(() => FontSize = 14);
         }
 
         // 開いているプロジェクトルートのパス
