@@ -22,7 +22,8 @@
                 <controls:TreeView Grid.Row="1"
                                    Grid.Column="0"
                                    Items="{Binding TreeItems}"
-                                   ItemTappedCommand="{Binding SelectItemCommand}"/>
+                                   ItemTappedCommand="{Binding SelectItemCommand}"
+                                   FontSize="{Binding FontSize}"/>
 
                 <!-- ファイル内容表示/編集 -->
                 <controls:LineNumberEditor Grid.Row="1"
@@ -85,6 +86,7 @@
                 <ScrollView Grid.Row="1"
                             Grid.Column="2">
                         <Label Text="{Binding VdmContent}"
+                               FontSize="{Binding FontSize}"
                                Padding="10"/>
                 </ScrollView>
         </Grid>

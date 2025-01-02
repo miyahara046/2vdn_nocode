@@ -19,6 +19,10 @@ namespace _2vdm_spec_generator.Controls
             BindableProperty.Create(nameof(ItemTappedCommand), typeof(ICommand),
                 typeof(TreeView), null);
 
+        public static readonly BindableProperty FontSizeProperty =
+            BindableProperty.Create(nameof(FontSize), typeof(double),
+                typeof(TreeView), 14.0);
+
         public ObservableCollection<FileSystemItem> Items
         {
             get => (ObservableCollection<FileSystemItem>)GetValue(ItemsProperty);
@@ -35,6 +39,12 @@ namespace _2vdm_spec_generator.Controls
         {
             get => (ICommand)GetValue(ItemTappedCommandProperty);
             set => SetValue(ItemTappedCommandProperty, value);
+        }
+
+        public double FontSize
+        {
+            get => (double)GetValue(FontSizeProperty);
+            set => SetValue(FontSizeProperty, value);
         }
 
         public TreeView()
