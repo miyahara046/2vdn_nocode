@@ -379,7 +379,7 @@ namespace _2vdm_spec_generator.ViewModel
                                 {
                                     LoadedItems.Add(item);
                                 }
-                                UpdateTreeItems();
+                                AddItemFromCollections(e.FullPath);
                             }
                             else if (extension == ".md" || extension == ".vdmpp")
                             {
@@ -394,7 +394,7 @@ namespace _2vdm_spec_generator.ViewModel
                                         Content = await File.ReadAllTextAsync(fileInfo.FullName)
                                     };
                                     LoadedItems.Add(fileItem);
-                                    UpdateTreeItems();
+                                    AddItemFromCollections(e.FullPath);
                                     System.Diagnostics.Debug.WriteLine($"ファイル追加: {e.FullPath}");
                                 }
                                 catch (Exception ex)
@@ -458,70 +458,66 @@ namespace _2vdm_spec_generator.ViewModel
             }
         }
 
-        private void UpdateTreeItems()
+        private void AddItemFromCollections(string fullPath)
         {
             if (string.IsNullOrEmpty(ProjectRootPath))
             {
                 return;  // プロジェクトルートパスが設定されていない場合は処理を中断
             }
 
-            // 現在表示されているディレクトリパスを取得
-            var displayedPaths = TreeItems
-                .OfType<DirectoryItem>()
-                .Select(d => d.FullPath)
-                .ToList();
+            // LoadedItemsから追加するアイテムを検索
+            var itemToAdd = LoadedItems.FirstOrDefault(i => i.FullPath == fullPath);
+            if (itemToAdd == null) return;
 
-            // LoadedItemsから、表示すべきアイテムを取得
-            var itemsToShow = LoadedItems.Where(i =>
+            // アイテムの親ディレクトリパスを取得
+            var parentPath = Path.GetDirectoryName(fullPath);
+
+            // アイテムがルートディレクトリ直下の場合
+            if (parentPath == ProjectRootPath)
             {
-                try
+                if (!TreeItems.Any(i => i.FullPath == fullPath))
                 {
-                    return (!i.FullPath.Substring(ProjectRootPath.Length + 1).Contains(Path.DirectorySeparatorChar))
-                        ||
-                        displayedPaths.Any(p =>
-                            i.FullPath.StartsWith(p + Path.DirectorySeparatorChar) &&
-                            !i.FullPath.Substring(p.Length + 1).Contains(Path.DirectorySeparatorChar));
+                    TreeItems.Add(itemToAdd);
                 }
-                catch
-                {
-                    return false;  // パス処理でエラーが発生した場合はそのアイテムを除外
-                }
-            }).ToList();
-
-            // 新しいTreeItemsコレクションを作成
-            var newTreeItems = new ObservableCollection<FileSystemItem>();
-
-            // 既存のTreeItemsの順序を維持しながら、更新されたアイテムを追加
-            foreach (var existingItem in TreeItems)
-            {
-                var updatedItem = itemsToShow.FirstOrDefault(i => i.FullPath == existingItem.FullPath);
-                if (updatedItem != null)
-                {
-                    newTreeItems.Add(updatedItem);
-                    itemsToShow.Remove(updatedItem);
-                }
+                return;
             }
 
-            // 残りの新しいアイテムを適切な位置に追加
-            foreach (var newItem in itemsToShow)
+            // 親ディレクトリが TreeItems に存在し、展開されているかチェック
+            var parentIndex = TreeItems.ToList().FindIndex(i => i.FullPath == parentPath);
+            if (parentIndex != -1)
             {
-                var parentPath = Path.GetDirectoryName(newItem.FullPath);
-                var parentIndex = newTreeItems.ToList().FindIndex(i => i.FullPath == parentPath);
+                // 親の次のアイテムが親のパスで始まる場合、ディレクトリは展開されている
+                var nextIndex = parentIndex + 1;
+                if (nextIndex < TreeItems.Count &&
+                    TreeItems[nextIndex].FullPath.StartsWith(parentPath + Path.DirectorySeparatorChar))
+                {
+                    // 既に存在しない場合のみ追加
+                    if (!TreeItems.Any(i => i.FullPath == fullPath))
+                    {
+                        // 適切な位置に挿入
+                        var insertIndex = TreeItems
+                            .Skip(parentIndex + 1)
+                            .TakeWhile(i => i.FullPath.StartsWith(parentPath + Path.DirectorySeparatorChar))
+                            .ToList()
+                            .FindIndex(i => string.Compare(i.Name, itemToAdd.Name, StringComparison.OrdinalIgnoreCase) > 0);
 
-                if (parentIndex != -1)
-                {
-                    // 親の直後に挿入
-                    newTreeItems.Insert(parentIndex + 1, newItem);
-                }
-                else
-                {
-                    // ルートレベルのアイテムは最後に追加
-                    newTreeItems.Add(newItem);
+                        if (insertIndex == -1)
+                        {
+                            // 最後に追加
+                            var lastSiblingIndex = TreeItems
+                                .Skip(parentIndex + 1)
+                                .TakeWhile(i => i.FullPath.StartsWith(parentPath + Path.DirectorySeparatorChar))
+                                .Count();
+                            TreeItems.Insert(parentIndex + 1 + lastSiblingIndex, itemToAdd);
+                        }
+                        else
+                        {
+                            // 見つかった位置に挿入
+                            TreeItems.Insert(parentIndex + 1 + insertIndex, itemToAdd);
+                        }
+                    }
                 }
             }
-
-            // TreeItemsを新しいコレクションで更新
-            TreeItems = newTreeItems;
         }
 
         [RelayCommand]
