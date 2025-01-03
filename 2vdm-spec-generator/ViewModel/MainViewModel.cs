@@ -121,13 +121,13 @@ namespace _2vdm_spec_generator.ViewModel
 
                         // ファイル監視を開始
                         InitializeFileWatcher(ProjectRootPath);
+                        IsFirstLaunch = false;
                     }
                 }
                 catch (Exception ex)
                 {
                     await Shell.Current.DisplayAlert("エラー", $"ファルダ選択中にエラーが発生しました: {ex.Message}", "OK");
                 }
-                IsFirstLaunch = false;
             });
 
         private async Task LoadFolder(string path, ObservableCollection<FileSystemItem> items)
