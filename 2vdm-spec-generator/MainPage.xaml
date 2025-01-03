@@ -8,8 +8,8 @@
              xmlns:models="clr-namespace:_2vdm_spec_generator.Models">
 
         <!-- <ContentPage.MenuBarItems> -->
-            <!-- ファイルメニュー -->
-            <!-- <MenuBarItem Text="File">
+        <!-- ファイルメニュー -->
+        <!-- <MenuBarItem Text="File">
                 <MenuFlyoutItem Text="フォルダを開く" 
                                 Command="{Binding SelectFolderCommand}" />
                 <MenuFlyoutItem Text="新規ファイル作成" 
@@ -20,16 +20,16 @@
                                 Command="{Binding DeleteSelectedFileCommand}" />
             </MenuBarItem> -->
 
-            <!-- 変換メニュー -->
-            <!-- <MenuBarItem Text="変換">
+        <!-- 変換メニュー -->
+        <!-- <MenuBarItem Text="変換">
                 <MenuFlyoutItem Text="VDM++に変換" 
                                 Command="{Binding ConvertToVdmCommand}" />
                 <MenuFlyoutItem Text="VDM++を保存" 
                                 Command="{Binding SaveVdmCommand}" />
             </MenuBarItem> -->
 
-            <!-- 表示メニュー -->
-            <!-- <MenuBarItem Text="表示">
+        <!-- 表示メニュー -->
+        <!-- <MenuBarItem Text="表示">
                 <MenuFlyoutItem Text="フォントサイズを大きく" 
                                 Command="{Binding IncreaseFontSizeCommand}" />
                 <MenuFlyoutItem Text="フォントサイズを小さく" 
@@ -46,13 +46,29 @@
               ColumnDefinitions="300, .25*, .25*"
               Padding="10">
 
-                <!--ファイルツリー-->
-                <Button Text="フォルダを選択"
-                        Command="{Binding SelectFolderCommand}"
-                        Grid.ColumnSpan="1"
-                        HeightRequest="40"
-                        Margin="0,5,0,5"
-                        VerticalOptions="Start"/>
+                <!-- ファイルツリーエリア -->
+                <StackLayout Grid.Row="0"
+                             Grid.Column="0"
+                             Orientation="Horizontal"
+                             Spacing="10"
+                             Margin="0,5,0,5">
+                        <Button Text="フォルダを選択"
+                                Command="{Binding SelectFolderCommand}"
+                                Grid.ColumnSpan="1"
+                                HeightRequest="40"
+                                Margin="0,5,0,5"
+                                VerticalOptions="Start"/>
+                        <Button Text="新規ファイル作成"
+                                Command="{Binding ShowNewFileDialogCommand}"
+                                HeightRequest="40"
+                                Margin="0,5,0,5"
+                                VerticalOptions="Start"/>
+                        <Button Text="選択ファイル削除"
+                                Command="{Binding DeleteSelectedFileCommand}"
+                                HeightRequest="40"
+                                Margin="0,5,0,5"
+                                VerticalOptions="Start"/>
+                </StackLayout>
 
                 <controls:TreeView Grid.Row="1"
                                    Grid.Column="0"
@@ -60,27 +76,17 @@
                                    ItemTappedCommand="{Binding SelectItemCommand}"
                                    FontSize="{Binding FontSize}"/>
 
-                <!-- ファイル内容表示/編集 -->
-                <controls:LineNumberEditor Grid.Row="1"
-                                           Grid.Column="1"
-                                           EditorText="{Binding SelectedFileContent}"
-                                           FontSize="{Binding FontSize}"/>
-
-                <!-- ボタンエリア -->
+                <!-- ファイル内容表示/編集エリア -->
                 <StackLayout Grid.Row="0"
                              Grid.Column="1"
                              Orientation="Horizontal"
-                             Spacing="10">
-                        <Button Text="新規作成"
-                                Command="{Binding ShowNewFileDialogCommand}"
-                                HeightRequest="40"
-                                Margin="10,5,0,5"
-                                VerticalOptions="Start"/>
+                             Spacing="10"
+                             Margin="15,5,0,5">
 
-                        <Button Text="変更を保存"
+                        <Button Text="ファイルの変更を保存"
                                 Command="{Binding SaveFileCommand}"
                                 HeightRequest="40"
-                                Margin="10,5,0,5"
+                                Margin="0,5,0,5"
                                 VerticalOptions="Start"/>
 
                         <Button Text="VDM仕様に変換"
@@ -89,35 +95,41 @@
                                 Margin="0,5,0,5"
                                 VerticalOptions="Start"/>
 
-                        <Button Text="VDM++記述を保存"
-                                Command="{Binding SaveVdmCommand}"
-                                HeightRequest="40"
-                                Margin="0,5,0,5"
-                                VerticalOptions="Start"/>
-
-                        <Button Text="選択ファイルを削除"
-                                Command="{Binding DeleteSelectedFileCommand}"
-                                HeightRequest="40"
-                                Margin="0,5,0,5"
-                                VerticalOptions="Start"/>
-
-                        <HorizontalStackLayout Spacing="5" Margin="10,5,0,5">
-                            <Button Text="A-" 
-                                    Command="{Binding DecreaseFontSizeCommand}"
-                                    HeightRequest="40"
-                                    WidthRequest="40"/>
-                            <Button Text="A" 
-                                    Command="{Binding ResetFontSizeCommand}"
-                                    HeightRequest="40"
-                                    WidthRequest="40"/>
-                            <Button Text="A+" 
-                                    Command="{Binding IncreaseFontSizeCommand}"
-                                    HeightRequest="40"
-                                    WidthRequest="40"/>
+                        <HorizontalStackLayout Spacing="5"
+                                               Margin="0,5,0,5">
+                                <Button Text="A-"
+                                        Command="{Binding DecreaseFontSizeCommand}"
+                                        HeightRequest="40"
+                                        WidthRequest="40"/>
+                            
+                                <Button Text="A"
+                                        Command="{Binding ResetFontSizeCommand}"
+                                        HeightRequest="40"
+                                        WidthRequest="40"/>
+                            
+                                <Button Text="A+"
+                                        Command="{Binding IncreaseFontSizeCommand}"
+                                        HeightRequest="40"
+                                        WidthRequest="40"/>
                         </HorizontalStackLayout>
                 </StackLayout>
 
-                <!-- VDM++表示エリア -->
+                <controls:LineNumberEditor Grid.Row="1"
+                                           Grid.Column="1"
+                                           EditorText="{Binding SelectedFileContent}"
+                                           FontSize="{Binding FontSize}"/>
+        <StackLayout Grid.Row="0"
+                             Grid.Column="2"
+                             Orientation="Horizontal"
+                             Spacing="10"
+                             Margin="0,5,0,5">
+                <Button Text="VDM++記述を保存"
+                        Command="{Binding SaveVdmCommand}"
+                        HeightRequest="40"
+                        Margin="0,5,0,5"
+                        VerticalOptions="Start"/>
+        </StackLayout>
+            
                 <ScrollView Grid.Row="1"
                             Grid.Column="2">
                         <Label Text="{Binding VdmContent}"
