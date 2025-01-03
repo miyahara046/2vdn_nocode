@@ -7,41 +7,40 @@
              x:DataType="viewmodel:MainViewModel"
              xmlns:models="clr-namespace:_2vdm_spec_generator.Models">
 
-        <!-- <ContentPage.MenuBarItems> -->
-        <!-- ファイルメニュー -->
-        <!-- <MenuBarItem Text="ファイル">
+        <!-- メニューバー -->
+        <ContentPage.MenuBarItems>
+                <!-- ファイルメニュー -->
+                <MenuBarItem Text="ファイル">
                         <MenuFlyoutItem Text="フォルダを開く"
                                         Command="{Binding SelectFolderCommand}"/>
                         <MenuFlyoutItem Text="新規ファイル作成"
                                         Command="{Binding ShowNewFileDialogCommand}"/>
-                        <MenuFlyoutItem Text="ファイルを保存"
-                                        Command="{Binding SaveFileCommand}"/>
-                        <MenuFlyoutItem Text="ファイルを削除"
+                        <MenuFlyoutItem Text="選択ファイル削除"
                                         Command="{Binding DeleteSelectedFileCommand}"/>
-                </MenuBarItem> -->
+                        <MenuFlyoutItem Text="ファイルの変更を保存"
+                                        Command="{Binding SaveFileCommand}"/>
+                </MenuBarItem>
 
-        <!-- 変換メニュー -->
-        <!-- <MenuBarItem Text="変換">
+                <!-- 変換メニュー -->
+                <MenuBarItem Text="変換">
                         <MenuFlyoutItem Text="VDM++に変換"
                                         Command="{Binding ConvertToVdmCommand}"/>
                         <MenuFlyoutItem Text="VDM++を保存"
                                         Command="{Binding SaveVdmCommand}"/>
-                </MenuBarItem> -->
+                </MenuBarItem>
 
-        <!-- 表示メニュー -->
-        <!-- <MenuBarItem Text="表示">
+                <!-- 表示メニュー -->
+                <MenuBarItem Text="表示">
                         <MenuFlyoutItem Text="フォントサイズを大きく"
                                         Command="{Binding IncreaseFontSizeCommand}"/>
                         <MenuFlyoutItem Text="フォントサイズを小さく"
                                         Command="{Binding DecreaseFontSizeCommand}"/>
                         <MenuFlyoutItem Text="フォントサイズをリセット"
                                         Command="{Binding ResetFontSizeCommand}"/>
-                        <MenuFlyoutSeparator/>
-                        <MenuFlyoutItem Text="ファイル一覧を並び替え"
-                                        Command="{Binding SortItemsCommand}"/>
-                </MenuBarItem> -->
-        <!-- </ContentPage.MenuBarItems> -->
+                </MenuBarItem>
+        </ContentPage.MenuBarItems>
 
+        <!-- メインコンテンツ -->
         <Grid RowDefinitions="Auto, *"
               ColumnDefinitions="300, .25*, .25*"
               Padding="10">
