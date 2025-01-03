@@ -46,13 +46,20 @@
               Padding="10">
 
                 <!-- 初回起動時のみ表示されるフォルダ選択ボタン -->
-                <Button Text="フォルダを選択"
-                        Command="{Binding SelectFolderCommand}"
-                        Grid.ColumnSpan="1"
-                        HeightRequest="20"
-                        Margin="0,5,0,5"
-                        VerticalOptions="Start"
-                        IsVisible="{Binding IsFirstLaunch}"/>
+                <StackLayout IsVisible="{Binding IsFirstLaunch}"
+                             Grid.Row="0"
+                             Grid.Column="0"
+                             Orientation="Horizontal"
+                             Spacing="10"
+                             Margin="0,5,0,5">
+                        <Button Text="フォルダを選択"
+                                Command="{Binding SelectFolderCommand}"
+                                HeightRequest="40"
+                                WidthRequest="250"
+                                Margin="0,5,0,5"
+                                VerticalOptions="Start"
+                                HorizontalOptions="Fill"/>
+                </StackLayout>
 
                 <!-- フォルダ選択後に表示される通常のUI -->
                 <StackLayout IsVisible="{Binding IsFirstLaunch, Converter={StaticResource InverseBooleanConverter}}"
@@ -63,7 +70,7 @@
                              Margin="0,5,0,5">
                         <Button Text="新規ファイル作成"
                                 Command="{Binding ShowNewFileDialogCommand}"
-                                HeightRequest="0"
+                                HeightRequest="40"
                                 Margin="0,5,0,5"
                                 VerticalOptions="Start"/>
                         <Button Text="選択ファイル削除"
