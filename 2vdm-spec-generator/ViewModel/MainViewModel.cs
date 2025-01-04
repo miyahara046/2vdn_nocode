@@ -12,21 +12,46 @@ using System.Threading;
 using Microsoft.Maui.ApplicationModel;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System;
+using System.Windows.Input;
+using _2vdm_spec_generator.Converters;
 
 namespace _2vdm_spec_generator.ViewModel
 {
     public partial class MainViewModel : ObservableObject
     {
-
         private readonly IFolderPicker _folderPicker;
         private FileSystemWatcher _watcher;
         private readonly object _fileLock = new object();
         private HashSet<string> _processingFiles = new HashSet<string>();
+        private double _fontSize = 14; // デフォルトサイズ
+
+        public double FontSize
+        {
+            get => _fontSize;
+            set
+            {
+                if (_fontSize != value)
+                {
+                    _fontSize = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public ICommand IncreaseFontSizeCommand { get; }
+        public ICommand DecreaseFontSizeCommand { get; }
+        public ICommand ResetFontSizeCommand { get; }
+
         public MainViewModel(IFolderPicker folderPicker)
         {
             _folderPicker = folderPicker;
             loadedItems = new ObservableCollection<FileSystemItem>();
             treeItems = new ObservableCollection<FileSystemItem>();
+
+            IncreaseFontSizeCommand = new Command(() => FontSize = Math.Min(20, FontSize + 2));
+            DecreaseFontSizeCommand = new Command(() => FontSize = Math.Max(10, FontSize - 2));
+            ResetFontSizeCommand = new Command(() => FontSize = 14);
         }
 
         // 開いているプロジェクトルートのパス
@@ -62,43 +87,48 @@ namespace _2vdm_spec_generator.ViewModel
         [ObservableProperty]
         private string newFileName;
 
-        [RelayCommand]
-        async Task SelectFolder()
-        {
-            try
+        [ObservableProperty]
+        private bool isFirstLaunch = true;
+
+        private ICommand _selectFolderCommand;
+        public ICommand SelectFolderCommand =>
+            _selectFolderCommand ??= new Command(async () =>
             {
-                var result = await _folderPicker.PickAsync();
-                if (result.IsSuccessful)
+                try
                 {
-                    ProjectRootPath = result.Folder.Path;
-                    LoadedItems.Clear();
-                    // 選択フォルダ以下のすべてのディレクトリとフォルダを読み込む
-                    await LoadFolder(ProjectRootPath, LoadedItems);
-                    
-                    // ツリーを辞書順にソート
-                    SortFileSystemItems(LoadedItems);
-
-                    // TreeItemsに選択フォルダ(プロジェクトルート)直下のアイテムのみを追加
-                    var rootItems = LoadedItems.Where(i =>
-                        i.FullPath.StartsWith(ProjectRootPath + Path.DirectorySeparatorChar) &&
-                        !i.FullPath.Substring(ProjectRootPath.Length + 1).Contains(Path.DirectorySeparatorChar)
-                    );
-
-                    TreeItems.Clear();
-                    foreach (var item in rootItems)
+                    var result = await _folderPicker.PickAsync();
+                    if (result.IsSuccessful)
                     {
-                        TreeItems.Add(item);
-                    }
+                        ProjectRootPath = result.Folder.Path;
+                        LoadedItems.Clear();
+                        // 選択フォルダ以下のすべてのディレクトリとフォルダを読み込む
+                        await LoadFolder(ProjectRootPath, LoadedItems);
 
-                    // ファイル監視を開始
-                    InitializeFileWatcher(ProjectRootPath);
+                        // ツリーを辞書順にソート
+                        SortFileSystemItems(LoadedItems);
+
+                        // TreeItemsに選択フォルダ(プロジェクトルート)直下のアイテムのみを追加
+                        var rootItems = LoadedItems.Where(i =>
+                            i.FullPath.StartsWith(ProjectRootPath + Path.DirectorySeparatorChar) &&
+                            !i.FullPath.Substring(ProjectRootPath.Length + 1).Contains(Path.DirectorySeparatorChar)
+                        );
+
+                        TreeItems.Clear();
+                        foreach (var item in rootItems)
+                        {
+                            TreeItems.Add(item);
+                        }
+
+                        // ファイル監視を開始
+                        InitializeFileWatcher(ProjectRootPath);
+                        IsFirstLaunch = false;
+                    }
                 }
-            }
-            catch (Exception ex)
-            {
-                await Shell.Current.DisplayAlert("エラー", $"フォルダ選択中にエラーが発生しました: {ex.Message}", "OK");
-            }
-        }
+                catch (Exception ex)
+                {
+                    await Shell.Current.DisplayAlert("エラー", $"ファルダ選択中にエラーが発生しました: {ex.Message}", "OK");
+                }
+            });
 
         private async Task LoadFolder(string path, ObservableCollection<FileSystemItem> items)
         {
@@ -146,15 +176,33 @@ namespace _2vdm_spec_generator.ViewModel
 
         [RelayCommand]
         async Task SelectItem(FileSystemItem item)
-        {   
+        {
             // MDファイルとVDMファイルの不整合をなくすためにアイテム選択時にvdmContentを空にしておく
             // こうすることで、SaveVDM実行時にvdmFilePathとselectedItemPathが対応したものになるはず
             if (!string.IsNullOrEmpty(vdmContent))
             {
                 VdmContent = string.Empty;
             }
+
+            // 以前の選択アイテムの選択状態を解除
+            var previousSelectedItem = TreeItems.FirstOrDefault(i => i.FullPath == SelectedItemPath);
+            if (previousSelectedItem != null)
+            {
+                previousSelectedItem.IsSelected = false;
+            }
+
+            // 新しい選択アイテムを設定
+            SelectedItemPath = item.FullPath;
+
+            // 新しい選択アイテムを選択状態に設定
+            var currentSelectedItem = TreeItems.FirstOrDefault(i => i.FullPath == SelectedItemPath);
+            if (currentSelectedItem != null)
+            {
+                currentSelectedItem.IsSelected = true;
+            }
+
             if (item is DirectoryItem dirItem)
-            {   
+            {
                 selectedItemPath = dirItem.FullPath;  // 選択アイテムのパスを保存
                 // 現在のアイテムのインデックスを取得
                 var currentIndex = TreeItems.IndexOf(item);
@@ -201,7 +249,8 @@ namespace _2vdm_spec_generator.ViewModel
             else if (item is FileItem fileItem)
             {
                 try
-                {   selectedItemPath = fileItem.FullPath;  // 選択アイテムのパスを保存
+                {
+                    selectedItemPath = fileItem.FullPath;  // 選択アイテムのパスを保存
                     SelectedFilePath = fileItem.FullPath;  // 表示ファイルのパスを保存
                     var newContent = await File.ReadAllTextAsync(fileItem.FullPath);
                     SelectedFileContent = newContent;
@@ -284,21 +333,40 @@ namespace _2vdm_spec_generator.ViewModel
                 {
                     try
                     {
+                        string extension = Path.GetExtension(e.FullPath).ToLower();
+                        bool isDirectory = Directory.Exists(e.FullPath);
+
+                        if (!isDirectory && extension != ".md" && extension != ".vdmpp")
+                        {
+                            // サポートされていないファイルタイプは無視
+                            System.Diagnostics.Debug.WriteLine($"サポート外のファイルタイプ: {e.FullPath}");
+                            return;
+                        }
+
                         if (e.ChangeType == WatcherChangeTypes.Deleted)
                         {
+                            System.Diagnostics.Debug.WriteLine($"削除イベント: {e.FullPath}");
                             RemoveItemFromCollections(e.FullPath);
                         }
                         else if (e.ChangeType == WatcherChangeTypes.Changed && File.Exists(e.FullPath))
                         {
-                            var extension = Path.GetExtension(e.FullPath).ToLower();
                             if (extension == ".md" || extension == ".vdmpp")
                             {
-                                // ファイルが完全に書き込まれるまで少し待機
-                                await Task.Delay(100);
+                                // ファイルが完全に書き込まれるまで待機
+                                await Task.Delay(500);
 
                                 // ファイルの内容を更新
-                                var fileInfo = new FileInfo(e.FullPath);
-                                var content = await File.ReadAllTextAsync(fileInfo.FullName);
+                                string content;
+                                try
+                                {
+                                    content = await File.ReadAllTextAsync(e.FullPath);
+                                }
+                                catch (IOException ioEx)
+                                {
+                                    // 読み取り失敗、後で再試行するか無視
+                                    System.Diagnostics.Debug.WriteLine($"ファイル読み込みエラー: {ioEx.Message}");
+                                    return;
+                                }
 
                                 // LoadedItemsの該当するファイルを更新
                                 var loadedFile = LoadedItems.OfType<FileItem>()
@@ -306,43 +374,58 @@ namespace _2vdm_spec_generator.ViewModel
                                 if (loadedFile != null)
                                 {
                                     loadedFile.Content = content;
+                                    System.Diagnostics.Debug.WriteLine($"ファイル内容更新: {e.FullPath}");
                                 }
 
                                 // 現在表示中のファイルが変更された場合、内容を更新
                                 if (e.FullPath == SelectedFilePath)
                                 {
                                     SelectedFileContent = content;
+                                    System.Diagnostics.Debug.WriteLine($"選択中ファイルの内容更新: {e.FullPath}");
                                 }
                             }
                         }
                         else if (e.ChangeType == WatcherChangeTypes.Created)
                         {
-                            // 既存の Created の処理
-                            if (Directory.Exists(e.FullPath))
+                            if (isDirectory)
                             {
+                                System.Diagnostics.Debug.WriteLine($"ディレクトリ作成イベント: {e.FullPath}");
+                                // 新しいディレクトリが作成された場合
                                 var tempItems = new ObservableCollection<FileSystemItem>();
                                 await LoadFolder(e.FullPath, tempItems);
                                 foreach (var item in tempItems)
                                 {
                                     LoadedItems.Add(item);
                                 }
+                                AddItemFromCollections(e.FullPath);
                             }
-                            else if (File.Exists(e.FullPath) && Path.GetExtension(e.FullPath).ToLower() == ".md")
+                            else if (extension == ".md" || extension == ".vdmpp")
                             {
-                                var fileInfo = new FileInfo(e.FullPath);
-                                var fileItem = new FileItem
+                                System.Diagnostics.Debug.WriteLine($"ファイル作成イベント: {e.FullPath}");
+                                try
                                 {
-                                    Name = fileInfo.Name,
-                                    FullPath = fileInfo.FullName,
-                                    Content = await File.ReadAllTextAsync(fileInfo.FullName)
-                                };
-                                LoadedItems.Add(fileItem);
+                                    var fileInfo = new FileInfo(e.FullPath);
+                                    var fileItem = new FileItem
+                                    {
+                                        Name = fileInfo.Name,
+                                        FullPath = fileInfo.FullName,
+                                        Content = await File.ReadAllTextAsync(fileInfo.FullName)
+                                    };
+                                    LoadedItems.Add(fileItem);
+                                    AddItemFromCollections(e.FullPath);
+                                    System.Diagnostics.Debug.WriteLine($"ファイル追加: {e.FullPath}");
+                                }
+                                catch (Exception ex)
+                                {
+                                    System.Diagnostics.Debug.WriteLine($"ファイル追加エラー: {ex.Message}");
+                                    await Shell.Current.DisplayAlert("エラー", $"ファイル監視中にエラーが発生しました: {ex.Message}", "OK");
+                                }
                             }
-                            UpdateTreeItems();
                         }
                     }
                     catch (Exception ex)
                     {
+                        System.Diagnostics.Debug.WriteLine($"ファイル監視処理エラー: {ex.Message}");
                         await Shell.Current.DisplayAlert("エラー", $"ファイル監視中にエラーが発生しました: {ex.Message}", "OK");
                     }
                 });
@@ -393,70 +476,66 @@ namespace _2vdm_spec_generator.ViewModel
             }
         }
 
-        private void UpdateTreeItems()
+        private void AddItemFromCollections(string fullPath)
         {
             if (string.IsNullOrEmpty(ProjectRootPath))
             {
                 return;  // プロジェクトルートパスが設定されていない場合は処理を中断
             }
 
-            // 現在表示されているディレクトリパスを取得
-            var displayedPaths = TreeItems
-                .OfType<DirectoryItem>()
-                .Select(d => d.FullPath)
-                .ToList();
+            // LoadedItemsから追加するアイテムを検索
+            var itemToAdd = LoadedItems.FirstOrDefault(i => i.FullPath == fullPath);
+            if (itemToAdd == null) return;
 
-            // LoadedItemsから、表示すべきアイテムを取得
-            var itemsToShow = LoadedItems.Where(i =>
+            // アイテムの親ディレクトリパスを取得
+            var parentPath = Path.GetDirectoryName(fullPath);
+
+            // アイテムがルートディレクトリ直下の場合
+            if (parentPath == ProjectRootPath)
             {
-                try
+                if (!TreeItems.Any(i => i.FullPath == fullPath))
                 {
-                    return (!i.FullPath.Substring(ProjectRootPath.Length + 1).Contains(Path.DirectorySeparatorChar))
-                        ||
-                        displayedPaths.Any(p =>
-                            i.FullPath.StartsWith(p + Path.DirectorySeparatorChar) &&
-                            !i.FullPath.Substring(p.Length + 1).Contains(Path.DirectorySeparatorChar));
+                    TreeItems.Add(itemToAdd);
                 }
-                catch
-                {
-                    return false;  // パス処理でエラーが発生した場合はそのアイテムを除外
-                }
-            }).ToList();
-
-            // 新しいTreeItemsコレクションを作成
-            var newTreeItems = new ObservableCollection<FileSystemItem>();
-
-            // 既存のTreeItemsの順序を維持しながら、更新されたアイテムを追加
-            foreach (var existingItem in TreeItems)
-            {
-                var updatedItem = itemsToShow.FirstOrDefault(i => i.FullPath == existingItem.FullPath);
-                if (updatedItem != null)
-                {
-                    newTreeItems.Add(updatedItem);
-                    itemsToShow.Remove(updatedItem);
-                }
+                return;
             }
 
-            // 残りの新しいアイテムを適切な位置に追加
-            foreach (var newItem in itemsToShow)
+            // 親ディレクトリが TreeItems に存在し、展開されているかチェック
+            var parentIndex = TreeItems.ToList().FindIndex(i => i.FullPath == parentPath);
+            if (parentIndex != -1)
             {
-                var parentPath = Path.GetDirectoryName(newItem.FullPath);
-                var parentIndex = newTreeItems.ToList().FindIndex(i => i.FullPath == parentPath);
+                // 親の次のアイテムが親のパスで始まる場合、ディレクトリは展開されている
+                var nextIndex = parentIndex + 1;
+                if (nextIndex < TreeItems.Count &&
+                    TreeItems[nextIndex].FullPath.StartsWith(parentPath + Path.DirectorySeparatorChar))
+                {
+                    // 既に存在しない場合のみ追加
+                    if (!TreeItems.Any(i => i.FullPath == fullPath))
+                    {
+                        // 適切な位置に挿入
+                        var insertIndex = TreeItems
+                            .Skip(parentIndex + 1)
+                            .TakeWhile(i => i.FullPath.StartsWith(parentPath + Path.DirectorySeparatorChar))
+                            .ToList()
+                            .FindIndex(i => string.Compare(i.Name, itemToAdd.Name, StringComparison.OrdinalIgnoreCase) > 0);
 
-                if (parentIndex != -1)
-                {
-                    // 親の直後に挿入
-                    newTreeItems.Insert(parentIndex + 1, newItem);
-                }
-                else
-                {
-                    // ルートレベルのアイテムは最後に追加
-                    newTreeItems.Add(newItem);
+                        if (insertIndex == -1)
+                        {
+                            // 最後に追加
+                            var lastSiblingIndex = TreeItems
+                                .Skip(parentIndex + 1)
+                                .TakeWhile(i => i.FullPath.StartsWith(parentPath + Path.DirectorySeparatorChar))
+                                .Count();
+                            TreeItems.Insert(parentIndex + 1 + lastSiblingIndex, itemToAdd);
+                        }
+                        else
+                        {
+                            // 見つかった位置に挿入
+                            TreeItems.Insert(parentIndex + 1 + insertIndex, itemToAdd);
+                        }
+                    }
                 }
             }
-
-            // TreeItemsを新しいコレクションで更新
-            TreeItems = newTreeItems;
         }
 
         [RelayCommand]
@@ -470,12 +549,22 @@ namespace _2vdm_spec_generator.ViewModel
                     return;
                 }
 
+                // ファイル処理中としてマーク
+                _processingFiles.Add(SelectedFilePath);
+
+                // ファイルを書き込む
                 await File.WriteAllTextAsync(SelectedFilePath, SelectedFileContent);
+
                 await Shell.Current.DisplayAlert("成功", "ファイルを保存しました。", "OK");
             }
             catch (Exception ex)
             {
                 await Shell.Current.DisplayAlert("エラー", $"ファイルの保存中にエラーが発生しました: {ex.Message}", "OK");
+            }
+            finally
+            {
+                // ファイル処理中のマークを解除
+                _processingFiles.Remove(SelectedFilePath);
             }
         }
 
@@ -496,6 +585,7 @@ namespace _2vdm_spec_generator.ViewModel
                     return;
                 }
 
+                _processingFiles.Add(VdmFilePath); // ファイルパスを追加
                 // 既存のファイルをLoadedItemsとTreeItemsから削除
                 var existingLoadedItem = LoadedItems.OfType<FileItem>()
                     .FirstOrDefault(f => f.FullPath == VdmFilePath);
@@ -529,24 +619,24 @@ namespace _2vdm_spec_generator.ViewModel
                     var mdIndex = LoadedItems.ToList().FindIndex(i => i.FullPath == VdmSourceFilePath);
                     if (mdIndex != -1)
                     {
-                        LoadedItems.Insert(mdIndex + 1, fileItem);
-                        
+                        InsertInOrder(LoadedItems, fileItem);
+
                         var treeIndex = TreeItems.ToList().FindIndex(i => i.FullPath == VdmSourceFilePath);
                         if (treeIndex != -1)
                         {
-                            TreeItems.Insert(treeIndex + 1, fileItem);
+                            InsertInOrder(TreeItems, fileItem);
                         }
                     }
                     else
                     {
-                        LoadedItems.Add(fileItem);
-                        TreeItems.Add(fileItem);
+                        InsertInOrder(LoadedItems, fileItem);
+                        InsertInOrder(TreeItems, fileItem);
                     }
                 }
                 else
                 {
-                    LoadedItems.Add(fileItem);
-                    TreeItems.Add(fileItem);
+                    InsertInOrder(LoadedItems, fileItem);
+                    InsertInOrder(TreeItems, fileItem);
                 }
 
                 await Shell.Current.DisplayAlert("成功", "VDM++記述を保存しました。", "OK");
@@ -560,6 +650,10 @@ namespace _2vdm_spec_generator.ViewModel
             catch (Exception ex)
             {
                 await Shell.Current.DisplayAlert("エラー", $"VDM++記述の保存中にエラーが発生しました: {ex.Message}", "OK");
+            }
+            finally
+            {
+                _processingFiles.Remove(VdmFilePath); // ファイルパスを削除
             }
         }
 
@@ -593,9 +687,9 @@ namespace _2vdm_spec_generator.ViewModel
             {
                 // ユーザーに確認
                 bool answer = await Shell.Current.DisplayAlert(
-                    "確認", 
-                    $"ファイル '{Path.GetFileName(SelectedFilePath)}' を削除してもよろしいですか？", 
-                    "はい", 
+                    "確認",
+                    $"ファイル '{Path.GetFileName(SelectedFilePath)}' を削除してもよろしいですか？",
+                    "はい",
                     "いいえ");
 
                 if (!answer) return;
@@ -632,6 +726,8 @@ namespace _2vdm_spec_generator.ViewModel
         [RelayCommand]
         async Task CreateNewFile()
         {
+            string newFilePath = string.Empty;
+
             try
             {
                 if (string.IsNullOrEmpty(ProjectRootPath))
@@ -648,10 +744,10 @@ namespace _2vdm_spec_generator.ViewModel
 
                 // 作成先のディレクトリパスを決定
                 string targetDirectory = ProjectRootPath;
-                
+
                 // 選択されているアイテムを取得
                 var selectedItem = LoadedItems.FirstOrDefault(i => i.FullPath == selectedItemPath);
-                
+
                 // // デバッグ用
                 // if (selectedItem != null)
                 // {
@@ -681,7 +777,7 @@ namespace _2vdm_spec_generator.ViewModel
                     var dirName = Path.GetFileName(selectedItemPath);
                     bool createInSelectedDir = await Shell.Current.DisplayAlert(
                         "確認",
-                        $"[{dirName}]の中にmdファイルを作成しますか?",
+                        $"{dirName}フォルダの中にmdファイルを作成しますか?",
                         "はい",
                         "いいえ");
 
@@ -698,7 +794,11 @@ namespace _2vdm_spec_generator.ViewModel
                     fileName += ".md";
                 }
 
-                string newFilePath = Path.Combine(targetDirectory, fileName);
+                // 新規ファイルのパスを事前に宣言
+                newFilePath = Path.Combine(targetDirectory, fileName);
+
+                // ファイル処理中としてマーク
+                _processingFiles.Add(newFilePath);
 
                 // 既存のファイルをチェック
                 if (File.Exists(newFilePath))
@@ -719,23 +819,34 @@ namespace _2vdm_spec_generator.ViewModel
                 };
 
                 // LoadedItemsに追加
-                LoadedItems.Add(fileItem);
+                InsertInOrder(LoadedItems, fileItem);
 
-                // TreeItemsに追加（選択されているディレクトリが展開されている場合のみ）
+                // TreeItemsに辞書順を維持しながら追加（選択されているディレクトリが展開されている場合のみ）
                 if (targetDirectory == ProjectRootPath)
                 {
-                    // ルートディレクトリの場合は直接追加
-                    TreeItems.Add(fileItem);
+                    // ルートディレクトリの場合は辞書順に挿入
+                    InsertInOrder(TreeItems, fileItem);
                 }
                 else
                 {
                     // 選択されたディレクトリの子アイテムが表示されている場合のみ追加
                     var parentDirIndex = TreeItems.ToList().FindIndex(i => i.FullPath == targetDirectory);
-                    if (parentDirIndex != -1 && 
-                        parentDirIndex + 1 < TreeItems.Count && 
+                    if (parentDirIndex != -1 &&
+                        parentDirIndex + 1 < TreeItems.Count &&
                         TreeItems[parentDirIndex + 1].FullPath.StartsWith(targetDirectory))
                     {
-                        TreeItems.Insert(parentDirIndex + 1, fileItem);
+                        // 子アイテムの範囲を取得
+                        int insertIndex = parentDirIndex + 1;
+                        while (insertIndex < TreeItems.Count &&
+                               TreeItems[insertIndex].FullPath.StartsWith(targetDirectory + Path.DirectorySeparatorChar))
+                        {
+                            if (string.Compare(TreeItems[insertIndex].Name, fileItem.Name, StringComparison.OrdinalIgnoreCase) > 0)
+                            {
+                                break;
+                            }
+                            insertIndex++;
+                        }
+                        TreeItems.Insert(insertIndex, fileItem);
                     }
                 }
 
@@ -747,6 +858,11 @@ namespace _2vdm_spec_generator.ViewModel
             catch (Exception ex)
             {
                 await Shell.Current.DisplayAlert("エラー", $"ファイルの作成中にエラーが発生しました: {ex.Message}", "OK");
+            }
+            finally
+            {
+                // 処理が完了したらファイルパスを解除
+                _processingFiles.Remove(newFilePath);
             }
         }
 
@@ -779,7 +895,7 @@ namespace _2vdm_spec_generator.ViewModel
 
         [RelayCommand]
         async Task ShowNewFileDialog()
-        {   
+        {
             if (string.IsNullOrEmpty(ProjectRootPath))
             {
                 await Shell.Current.DisplayAlert("エラー", "プロジェクトフォルダが選択されていません。", "OK");
@@ -801,6 +917,28 @@ namespace _2vdm_spec_generator.ViewModel
                     await CreateNewFile();
                 }
             }
+        }
+
+        /// ObservableCollectionに辞書順でアイテムを挿入するメソッド
+        private void InsertInOrder(ObservableCollection<FileSystemItem> collection, FileSystemItem newItem)
+        {
+            if (collection.Count == 0)
+            {
+                collection.Add(newItem);
+                return;
+            }
+
+            for (int i = 0; i < collection.Count; i++)
+            {
+                if (string.Compare(newItem.Name, collection[i].Name, StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    collection.Insert(i, newItem);
+                    return;
+                }
+            }
+
+            // すべてのアイテムよりも後の場合は末尾に追加
+            collection.Add(newItem);
         }
     }
 }

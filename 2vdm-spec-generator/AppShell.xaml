@@ -7,9 +7,22 @@
     Shell.FlyoutBehavior="Disabled"
     Title="_2vdm_spec_generator">
 
+    <Shell.TitleView>
+        <Grid ColumnDefinitions="*"
+              VerticalOptions="Center">
+            <Label Text="MD2VDM++Spec"
+                   VerticalOptions="Center"
+                   HorizontalOptions="Center"
+                   TranslationX="-110"
+                   FontSize="30"
+                   FontAttributes="Bold"
+                   TextColor="Black"/>
+        </Grid>
+    </Shell.TitleView>
+
     <ShellContent
-        Title="ToVDM++Spec"
+        Title="MD2VDM++Spec"
         ContentTemplate="{DataTemplate local:MainPage}"
-        Route="MainPage" />
+        Route="MainPage"/>
 
 </Shell>
