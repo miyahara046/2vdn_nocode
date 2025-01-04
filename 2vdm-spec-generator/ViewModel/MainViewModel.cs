@@ -619,24 +619,24 @@ namespace _2vdm_spec_generator.ViewModel
                     var mdIndex = LoadedItems.ToList().FindIndex(i => i.FullPath == VdmSourceFilePath);
                     if (mdIndex != -1)
                     {
-                        LoadedItems.Insert(mdIndex + 1, fileItem);
+                        InsertInOrder(LoadedItems, fileItem);
 
                         var treeIndex = TreeItems.ToList().FindIndex(i => i.FullPath == VdmSourceFilePath);
                         if (treeIndex != -1)
                         {
-                            TreeItems.Insert(treeIndex + 1, fileItem);
+                            InsertInOrder(TreeItems, fileItem);
                         }
                     }
                     else
                     {
-                        LoadedItems.Add(fileItem);
-                        TreeItems.Add(fileItem);
+                        InsertInOrder(LoadedItems, fileItem);
+                        InsertInOrder(TreeItems, fileItem);
                     }
                 }
                 else
                 {
-                    LoadedItems.Add(fileItem);
-                    TreeItems.Add(fileItem);
+                    InsertInOrder(LoadedItems, fileItem);
+                    InsertInOrder(TreeItems, fileItem);
                 }
 
                 await Shell.Current.DisplayAlert("成功", "VDM++記述を保存しました。", "OK");
@@ -819,13 +819,13 @@ namespace _2vdm_spec_generator.ViewModel
                 };
 
                 // LoadedItemsに追加
-                LoadedItems.Add(fileItem);
+                InsertInOrder(LoadedItems, fileItem);
 
-                // TreeItemsに追加（選択されているディレクトリが展開されている場合のみ）
+                // TreeItemsに辞書順を維持しながら追加（選択されているディレクトリが展開されている場合のみ）
                 if (targetDirectory == ProjectRootPath)
                 {
-                    // ルートディレクトリの場合は直接追加
-                    TreeItems.Add(fileItem);
+                    // ルートディレクトリの場合は辞書順に挿入
+                    InsertInOrder(TreeItems, fileItem);
                 }
                 else
                 {
@@ -835,7 +835,18 @@ namespace _2vdm_spec_generator.ViewModel
                         parentDirIndex + 1 < TreeItems.Count &&
                         TreeItems[parentDirIndex + 1].FullPath.StartsWith(targetDirectory))
                     {
-                        TreeItems.Insert(parentDirIndex + 1, fileItem);
+                        // 子アイテムの範囲を取得
+                        int insertIndex = parentDirIndex + 1;
+                        while (insertIndex < TreeItems.Count &&
+                               TreeItems[insertIndex].FullPath.StartsWith(targetDirectory + Path.DirectorySeparatorChar))
+                        {
+                            if (string.Compare(TreeItems[insertIndex].Name, fileItem.Name, StringComparison.OrdinalIgnoreCase) > 0)
+                            {
+                                break;
+                            }
+                            insertIndex++;
+                        }
+                        TreeItems.Insert(insertIndex, fileItem);
                     }
                 }
 
@@ -906,6 +917,28 @@ namespace _2vdm_spec_generator.ViewModel
                     await CreateNewFile();
                 }
             }
+        }
+
+        /// ObservableCollectionに辞書順でアイテムを挿入するメソッド
+        private void InsertInOrder(ObservableCollection<FileSystemItem> collection, FileSystemItem newItem)
+        {
+            if (collection.Count == 0)
+            {
+                collection.Add(newItem);
+                return;
+            }
+
+            for (int i = 0; i < collection.Count; i++)
+            {
+                if (string.Compare(newItem.Name, collection[i].Name, StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    collection.Insert(i, newItem);
+                    return;
+                }
+            }
+
+            // すべてのアイテムよりも後の場合は末尾に追加
+            collection.Add(newItem);
         }
     }
 }
