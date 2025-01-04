@@ -12,6 +12,20 @@
         <ResourceDictionary>
             <converters:IndentConverter x:Key="IndentConverter"/>
             <converters:IconConverter x:Key="IconConverter"/>
+
+            <Style x:Key="TreeViewLabelStyle"
+                    TargetType="Label">
+                <Style.Triggers>
+                    <DataTrigger TargetType="Label"
+                                 Binding="{Binding IsSelected}"
+                                 Value="True">
+                        <Setter Property="BackgroundColor"
+                                Value="{AppThemeBinding 
+                                    Light={StaticResource Gray200},
+                                    Dark={StaticResource Gray600}}"/>
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
         </ResourceDictionary>
     </ContentView.Resources>
 
@@ -20,7 +34,7 @@
             <DataTemplate x:DataType="models:FileSystemItem">
                 <Grid>
                     <Grid.GestureRecognizers>
-                        <TapGestureRecognizer 
+                        <TapGestureRecognizer
                             Command="{Binding Source={x:Reference this}, Path=ItemTappedCommand}"
                             CommandParameter="{Binding .}"/>
                     </Grid.GestureRecognizers>
@@ -35,25 +49,31 @@
                             DefaultBackgroundColor="Transparent"/>
                     </Grid.Behaviors>
 
-                    <Grid ColumnDefinitions="Auto,*" BackgroundColor="Transparent">
+                    <Grid ColumnDefinitions="Auto,*"
+                          BackgroundColor="Transparent">
                         <Label Grid.Column="0"
-                               FontSize="{Binding Source={x:Reference this}, Path=FontSize}">
+                               FontSize="{Binding Source={x:Reference this}, Path=FontSize}"
+                               Style="{StaticResource TreeViewLabelStyle}">
                             <Label.Margin>
                                 <MultiBinding Converter="{StaticResource IndentConverter}">
                                     <Binding Path="FullPath"/>
-                                    <Binding Source="{x:Reference this}" Path="BindingContext.ProjectRootPath"/>
+                                    <Binding Source="{x:Reference this}"
+                                             Path="BindingContext.ProjectRootPath"/>
                                 </MultiBinding>
                             </Label.Margin>
                             <Label.Text>
                                 <MultiBinding Converter="{StaticResource IconConverter}">
-                                    <Binding Path="." />
-                                    <Binding Source="{x:Reference this}" Path="Items" />
+                                    <Binding Path="."/>
+                                    <Binding Source="{x:Reference this}"
+                                             Path="Items"/>
                                 </MultiBinding>
                             </Label.Text>
                         </Label>
-                        <Label Grid.Column="1" 
+                        <Label Grid.Column="1"
                                Text="{Binding Name}"
-                               FontSize="{Binding Source={x:Reference this}, Path=FontSize}"/>
+                               FontSize="{Binding Source={x:Reference this}, Path=FontSize}"
+                               Style="{StaticResource TreeViewLabelStyle}">
+                        </Label>
                     </Grid>
                 </Grid>
             </DataTemplate>

@@ -183,6 +183,24 @@ namespace _2vdm_spec_generator.ViewModel
             {
                 VdmContent = string.Empty;
             }
+
+            // 以前の選択アイテムの選択状態を解除
+            var previousSelectedItem = TreeItems.FirstOrDefault(i => i.FullPath == SelectedItemPath);
+            if (previousSelectedItem != null)
+            {
+                previousSelectedItem.IsSelected = false;
+            }
+
+            // 新しい選択アイテムを設定
+            SelectedItemPath = item.FullPath;
+
+            // 新しい選択アイテムを選択状態に設定
+            var currentSelectedItem = TreeItems.FirstOrDefault(i => i.FullPath == SelectedItemPath);
+            if (currentSelectedItem != null)
+            {
+                currentSelectedItem.IsSelected = true;
+            }
+
             if (item is DirectoryItem dirItem)
             {
                 selectedItemPath = dirItem.FullPath;  // 選択アイテムのパスを保存
