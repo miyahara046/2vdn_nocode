@@ -174,8 +174,9 @@ namespace _2vdm_spec_generator.Services
             _sb.AppendLine("    押下時操作 (押下ボタン) ==");
             _sb.AppendLine("      cases 押下ボタン:");
 
-            var hasTimeoutEvent = false;
             var conditions = new HashSet<string>();
+            // タイムアウト時の画面遷移先を格納する
+            string screenNameForTimeOut = null;
 
             foreach (var listItem in listBlock.Descendants<ListItemBlock>()
                 .Where(li => li.Parent == listBlock))
@@ -190,15 +191,7 @@ namespace _2vdm_spec_generator.Services
                     {
                         if (parts[0].Contains("タイムアウト"))
                         {
-                            hasTimeoutEvent = true;
-                            var screenName = parts[1].Replace("へ", "").Trim();
-                            _sb.AppendLine("values");
-                            _sb.AppendLine($"  タイムアウト時間 := {screenName};");
-                            _sb.AppendLine("operations");
-                            _sb.AppendLine("  private");
-                            _sb.AppendLine("    タイムアウト時画面遷移: () ==> ()");
-                            _sb.AppendLine("    タイムアウト時画面遷移 () ==");
-                            _sb.AppendLine($"    「画面管理」'現在画面 := new「{screenName}」();");
+                            screenNameForTimeOut = parts[1].Replace("へ", "").Trim();
                             continue;
                         }
 
@@ -227,14 +220,6 @@ namespace _2vdm_spec_generator.Services
                 }
             }
 
-            // タイムアウトイベントがない場合のみ、デフォルトのタイムアウト処理を追加
-            if (!hasTimeoutEvent)
-            {
-                _sb.AppendLine("  private");
-                _sb.AppendLine("    タイムアウト時遷移: () ==> ()");
-                _sb.AppendLine("    タイムアウト時遷移 () ==");
-                _sb.AppendLine("      「画面管理」'現在画面 := /* 仕様に記載なし */");
-            }
 
             _sb.AppendLine("        others -> skip");
             _sb.AppendLine("      end");
@@ -251,6 +236,23 @@ namespace _2vdm_spec_generator.Services
                     _sb.AppendLine($"    {condition}: () ==> bool");
                     _sb.AppendLine($"    {condition}() == is not yet specified;");
                 }
+            }
+
+            // タイムアウトイベント時の関数を追加する
+            if (screenNameForTimeOut != null)
+            {
+                _sb.AppendLine("operations");
+                _sb.AppendLine("  private");
+                _sb.AppendLine("    タイムアウト時画面遷移: () ==> ()");
+                _sb.AppendLine("    タイムアウト時画面遷移 () ==");
+                _sb.AppendLine($"    「画面管理」'現在画面 := new「{screenNameForTimeOut}」();");
+            }
+            else
+            {
+                _sb.AppendLine("  private");
+                _sb.AppendLine("    タイムアウト時遷移: () ==> ()");
+                _sb.AppendLine("    タイムアウト時遷移 () ==");
+                _sb.AppendLine("      「画面管理」'現在画面 := /* 仕様に記載なし */");
             }
         }
 
