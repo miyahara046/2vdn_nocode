@@ -141,7 +141,8 @@
                 </StackLayout>
 
                 <ScrollView Grid.Row="1"
-                            Grid.Column="2">
+                            Grid.Column="2"
+                            Orientation="Both">
                         <Label Text="{Binding VdmContent}"
                                FontSize="{Binding FontSize}"
                                Padding="10"/>
