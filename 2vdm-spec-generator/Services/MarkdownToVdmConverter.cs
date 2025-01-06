@@ -39,6 +39,9 @@ namespace _2vdm_spec_generator.Services
         private readonly int initialOperationsLength = "operations\n".Length;
         private readonly int initialFunctionsLength = "functions\n".Length;
 
+        // インデント倍率を定義（例えば、2倍のインデント）
+        private readonly double indentMultiplier = 1.5;
+
         // コンストラクタ
         public VdmPlusPlusRenderer()
         {
@@ -267,8 +270,7 @@ namespace _2vdm_spec_generator.Services
                                     conditions.Add(conditionParts[0]); // 分岐条件を収集
                                 }
                             }
-                            var conditionCode = GenerateConditionCode(subConditions);
-                            _operationsSb.AppendLine($"        <{buttonName}> -> {conditionCode},");
+                            GenerateConditionCode(buttonName, subConditions);
                         }
                         else
                         {
@@ -330,9 +332,10 @@ namespace _2vdm_spec_generator.Services
             }
         }
 
-        private string GenerateConditionCode(List<string> conditions)
+        private void GenerateConditionCode(string buttonName, List<string> conditions)
         {
             var sb = new StringBuilder();
+            bool isFirst = true;
             foreach (var condition in conditions)
             {
                 var parts = condition.Split("→").Select(p => p.Trim()).ToList();
@@ -340,11 +343,22 @@ namespace _2vdm_spec_generator.Services
                 {
                     if (sb.Length > 0) sb.AppendLine();
                     var screenName = parts[1].Replace("へ", "");
-                    sb.Append($"if {parts[0]} ()\n");
-                    sb.Append($"                  then「画面管理」`現在画面 := new「{screenName}」()");
+                    // 'if'の前までの文字数を計算し、倍率を適用
+                    int size = (int)($"        <{buttonName}> -> ".Length * indentMultiplier);
+                    if (isFirst)
+                    {
+                        sb.Append($"        <{buttonName}> -> if {parts[0]} ()\n");
+                        sb.Append($"{new string(' ', size)}then 「画面管理」'現在画面 := new「{screenName}」()");
+                        isFirst = false;
+                    }
+                    else
+                    {
+                        sb.Append($"{new string(' ', size)}if {parts[0]} ()\n");
+                        sb.Append($"{new string(' ', size)}then 「画面管理」'現在画面 := new「{screenName}」()");
+                    }
                 }
             }
-            return sb.ToString();
+            _operationsSb.AppendLine($"{sb.ToString()},");
         }
 
         private void RenderDefaultOperations(ListBlock listBlock)
