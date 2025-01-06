@@ -23,15 +23,75 @@ namespace _2vdm_spec_generator.Services
 
     public class VdmPlusPlusRenderer
     {
-        private readonly StringBuilder _sb;
+        private readonly StringBuilder _classSb;
+        private readonly StringBuilder _typesSb;
+        private readonly StringBuilder _valueSb;
+        private readonly StringBuilder _instanceVariablesSb;
+        private readonly StringBuilder _operationsSb;
+        private readonly StringBuilder _functionsSb;
         private List<Block> _blocks;
         private int _currentBlockIndex;
 
+        // 初期行の長さをクラスレベルで定義
+        private readonly int initialTypesLength = "types\n".Length;
+        private readonly int initialValuesLength = "values\n".Length;
+        private readonly int initialInstanceVariablesLength = "instance variables\n".Length;
+        private readonly int initialOperationsLength = "operations\n".Length;
+        private readonly int initialFunctionsLength = "functions\n".Length;
+
+        // コンストラクタ
         public VdmPlusPlusRenderer()
         {
-            _sb = new StringBuilder();
+            _classSb = new StringBuilder();
+            _typesSb = new StringBuilder();
+            _valueSb = new StringBuilder();
+            _instanceVariablesSb = new StringBuilder();
+            _operationsSb = new StringBuilder();
+            _functionsSb = new StringBuilder();
             _blocks = new List<Block>();
             _currentBlockIndex = 0;
+
+            // 初期値の追加
+            _typesSb.AppendLine("types");
+            _valueSb.AppendLine("values");
+            _instanceVariablesSb.AppendLine("instance variables");
+            _operationsSb.AppendLine("operations");
+            _functionsSb.AppendLine("functions");
+        }
+
+        /// <summary>
+        /// _classSbに_valueSb、_instanceVariablesSb、_operationsSb、_functionsSbを順に追加します。
+        /// 初期化時に追加された文字列のみの場合はスキップします。
+        /// </summary>
+        public void BuildFinalVdm()
+        {
+            // 各StringBuilderの内容を_classSbに条件付きで追加
+            if (_typesSb.Length > initialTypesLength)
+            {
+                _classSb.AppendLine(_typesSb.ToString());
+            }
+
+            if (_valueSb.Length > initialValuesLength)
+            {
+                _classSb.AppendLine(_valueSb.ToString());
+            }
+
+            if (_instanceVariablesSb.Length > initialInstanceVariablesLength)
+            {
+                _classSb.AppendLine(_instanceVariablesSb.ToString());
+            }
+
+            if (_operationsSb.Length > initialOperationsLength)
+            {
+                _classSb.AppendLine(_operationsSb.ToString());
+            }
+
+            if (_functionsSb.Length > initialFunctionsLength)
+            {
+                _classSb.AppendLine(_functionsSb.ToString());
+            }
+
+            return;
         }
 
         public string Render(MarkdownDocument document)
@@ -48,7 +108,7 @@ namespace _2vdm_spec_generator.Services
 
             // それ以外は既存の処理を実行
             var className = ExtractClassName(document);
-            _sb.AppendLine($"class 「{className}」");
+            _classSb.AppendLine($"class 「{className}」");
 
             // タイムアウト値の処理を追加
             ProcessTimeoutValue(document);
@@ -73,16 +133,19 @@ namespace _2vdm_spec_generator.Services
                 }
             }
 
-            _sb.AppendLine($"end 「{className}」");
-            return _sb.ToString();
+            // 最終的なVDMを構築
+            BuildFinalVdm();
+
+            // クラスの終了を追加
+            _classSb.AppendLine($"end 「{className}」");
+            return _classSb.ToString();
         }
 
         private string RenderScreenManagement(MarkdownDocument document)
         {
             var sb = new StringBuilder();
             sb.AppendLine("class 「画面管理」");
-            sb.AppendLine("types");
-            sb.AppendLine("  /* 変換ルールA-1 */");
+            sb.AppendLine();
 
             // レベル1ヘッダーの直後のリストを探す
             var firstHeading = document.Descendants<HeadingBlock>().First();
@@ -93,10 +156,12 @@ namespace _2vdm_spec_generator.Services
                 var states = GetListItems(listBlock).ToList();
                 if (states.Any())
                 {
+                    sb.AppendLine("types");
                     sb.AppendLine($"  「画面状態」= {string.Join(" | ", states.Select(s => $"「{s}」"))};\n");
+                    sb.AppendLine();
                     sb.AppendLine("instance variables");
-                    sb.AppendLine("  /* 変換ルールA-1 */");
                     sb.AppendLine($"  static 現在画面:「画面状態」:= new「{states.First()}」()");
+                    sb.AppendLine();
                 }
             }
 
@@ -115,7 +180,7 @@ namespace _2vdm_spec_generator.Services
 
         private void RenderHelloWorld(HeadingBlock block)
         {
-            _sb.AppendLine("Hello World!!");
+            _classSb.AppendLine("Hello World!!");
         }
 
         private void RenderClass(HeadingBlock block)
@@ -123,9 +188,6 @@ namespace _2vdm_spec_generator.Services
             var nextBlock = GetNextBlock();
             if (nextBlock is ListBlock listBlock)
             {
-                // _sb.AppendLine("  /* 変換ルールB-2 */");
-                // _sb.AppendLine("  「ボタン状態」= <非押下> | " +
-                //     string.Join(" | ", GetListItems(listBlock).Select(item => $"<{item}>")));
                 _currentBlockIndex++; // リストブロックを処理したのでインデックスを進める
             }
         }
@@ -158,21 +220,17 @@ namespace _2vdm_spec_generator.Services
             var buttons = GetListItems(listBlock).ToList();
             if (buttons.Any())
             {
-                _sb.AppendLine("  /* 変換ルールB-2 */");
-                _sb.AppendLine($"  「ボタン状態」= <非押下> | {string.Join(" | ", buttons.Select(b => $"<{b}>"))};");
-                _sb.AppendLine("instance variables");
-                _sb.AppendLine("  押下ボタン:「ボタン状態」:= <非押下>;");
+                _typesSb.AppendLine($"  「ボタン状態」= <非押下> | {string.Join(" | ", buttons.Select(b => $"<{b}>"))};");
+                _instanceVariablesSb.AppendLine("  押下ボタン:「ボタン状態」:= <非押下>;");
             }
         }
 
         private void RenderEventOperations(ListBlock listBlock)
         {
-            _sb.AppendLine("operations");
-            _sb.AppendLine("  /* 変換ルールB-3 */");
-            _sb.AppendLine("  private");
-            _sb.AppendLine("    押下時操作:「ボタン状態」==> ()");
-            _sb.AppendLine("    押下時操作 (押下ボタン) ==");
-            _sb.AppendLine("      cases 押下ボタン:");
+            _operationsSb.AppendLine("  private");
+            _operationsSb.AppendLine("    押下時操作:「ボタン状態」==> ()");
+            _operationsSb.AppendLine("    押下時操作 (押下ボタン) ==");
+            _operationsSb.AppendLine("      cases 押下ボタン:");
 
             var conditions = new HashSet<string>();
             // タイムアウト時の画面遷移先を格納する
@@ -206,11 +264,11 @@ namespace _2vdm_spec_generator.Services
                                 var conditionParts = condition.Split("→").Select(p => p.Trim()).ToList();
                                 if (conditionParts.Count == 2)
                                 {
-                                    conditions.Add(conditionParts[0]); // 分岐条��を収集
+                                    conditions.Add(conditionParts[0]); // 分岐条件を収集
                                 }
                             }
                             var conditionCode = GenerateConditionCode(subConditions);
-                            _sb.AppendLine($"        <{buttonName}> -> {conditionCode},");
+                            _operationsSb.AppendLine($"        <{buttonName}> -> {conditionCode},");
                         }
                         else
                         {
@@ -221,38 +279,36 @@ namespace _2vdm_spec_generator.Services
             }
 
 
-            _sb.AppendLine("        others -> skip");
-            _sb.AppendLine("      end");
-            _sb.AppendLine("    pre 押下ボタン <> <非押下>");
-            _sb.AppendLine("    post 押下ボタン = <非押下>");
+            _operationsSb.AppendLine("        others -> skip");
+            _operationsSb.AppendLine("      end");
+            _operationsSb.AppendLine("    pre 押下ボタン <> <非押下>");
+            _operationsSb.AppendLine("    post 押下ボタン = <非押下>");
 
             // 分岐条件の関数定義を追加
             if (conditions.Any())
             {
-                _sb.AppendLine("functions");
                 foreach (var condition in conditions)
                 {
-                    _sb.AppendLine("  private");
-                    _sb.AppendLine($"    {condition}: () ==> bool");
-                    _sb.AppendLine($"    {condition}() == is not yet specified;");
+                    _functionsSb.AppendLine("  private");
+                    _functionsSb.AppendLine($"    {condition}: () ==> bool");
+                    _functionsSb.AppendLine($"    {condition}() == is not yet specified;");
                 }
             }
 
             // タイムアウトイベント時の関数を追加する
             if (screenNameForTimeOut != null)
             {
-                _sb.AppendLine("operations");
-                _sb.AppendLine("  private");
-                _sb.AppendLine("    タイムアウト時画面遷移: () ==> ()");
-                _sb.AppendLine("    タイムアウト時画面遷移 () ==");
-                _sb.AppendLine($"    「画面管理」'現在画面 := new「{screenNameForTimeOut}」();");
+                _operationsSb.AppendLine("  private");
+                _operationsSb.AppendLine("    タイムアウト時画面遷移: () ==> ()");
+                _operationsSb.AppendLine("    タイムアウト時画面遷移 () ==");
+                _operationsSb.AppendLine($"    「画面管理」'現在画面 := new「{screenNameForTimeOut}」();");
             }
             else
             {
-                _sb.AppendLine("  private");
-                _sb.AppendLine("    タイムアウト時遷移: () ==> ()");
-                _sb.AppendLine("    タイムアウト時遷移 () ==");
-                _sb.AppendLine("      「画面管理」'現在画面 := /* 仕様に記載なし */");
+                _operationsSb.AppendLine("  private");
+                _operationsSb.AppendLine("    タイムアウト時遷移: () ==> ()");
+                _operationsSb.AppendLine("    タイムアウト時遷移 () ==");
+                _operationsSb.AppendLine("      「画面管理」'現在画面 := /* 仕様に記載なし */");
             }
         }
 
@@ -261,16 +317,16 @@ namespace _2vdm_spec_generator.Services
             if (action.Contains("表示部に") && action.Contains("を追加"))
             {
                 var number = action.Replace("表示部に", "").Replace("を追加", "");
-                _sb.AppendLine($"        <{buttonName}> -> 表示部.入力操作 ({number}),");
+                _operationsSb.AppendLine($"        <{buttonName}> -> 表示部.入力操作 ({number}),");
             }
             else if (action.Contains("表示部の文字削除"))
             {
-                _sb.AppendLine($"        <{buttonName}> -> 表示部.削除操作 (),");
+                _operationsSb.AppendLine($"        <{buttonName}> -> 表示部.削除操作 (),");
             }
             else if (action.Contains("画面へ"))
             {
                 var screenName = action.Replace("へ", "");
-                _sb.AppendLine($"        <{buttonName}> ->「画面管理」'現在画面 := new「{screenName}」(),");
+                _operationsSb.AppendLine($"        <{buttonName}> ->「画面管理」'現在画面 := new「{screenName}」(),");
             }
         }
 
@@ -294,19 +350,18 @@ namespace _2vdm_spec_generator.Services
         private void RenderDefaultOperations(ListBlock listBlock)
         {
             // 既存の処理をここに移動
-            _sb.AppendLine("operations");
-            _sb.AppendLine("  /* 変換ルールB-3 */");
-            _sb.AppendLine("  private");
-            _sb.AppendLine("    押下時操作:「ボタン状態」==> ()");
-            _sb.AppendLine("    押下時操作 (押下ボタン) ==");
-            _sb.AppendLine("      cases 押下ボタン:");
+            _operationsSb.AppendLine("operations");
+            _operationsSb.AppendLine("  private");
+            _operationsSb.AppendLine("    押下時操作:「ボタン状態」==> ()");
+            _operationsSb.AppendLine("    押下時操作 (押下ボタン) ==");
+            _operationsSb.AppendLine("      cases 押下ボタン:");
 
             foreach (var item in GetListItems(listBlock))
             {
-                _sb.AppendLine($"        <{item}> -> skip");
+                _operationsSb.AppendLine($"        <{item}> -> skip");
             }
 
-            _sb.AppendLine("      end");
+            _operationsSb.AppendLine("      end");
         }
 
         private IEnumerable<string> GetListItems(ListBlock listBlock)
@@ -337,8 +392,7 @@ namespace _2vdm_spec_generator.Services
                         if (item.Contains("秒でタイムアウト"))
                         {
                             var timeoutValue = item.Replace("秒でタイムアウト", "").Trim();
-                            _sb.AppendLine("values");
-                            _sb.AppendLine($"  タイムアウト時間 := {timeoutValue};");
+                            _valueSb.AppendLine($"  タイムアウト時間 := {timeoutValue};");
                             return;
                         }
                     }
