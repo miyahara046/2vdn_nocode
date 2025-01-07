@@ -286,17 +286,6 @@ namespace _2vdm_spec_generator.Services
             _operationsSb.AppendLine("    pre 押下ボタン <> <非押下>");
             _operationsSb.AppendLine("    post 押下ボタン = <非押下>");
 
-            // 分岐条件の関数定義を追加
-            if (conditions.Any())
-            {
-                foreach (var condition in conditions)
-                {
-                    _functionsSb.AppendLine("  private");
-                    _functionsSb.AppendLine($"    {condition}: () ==> bool");
-                    _functionsSb.AppendLine($"    {condition}() == is not yet specified;");
-                }
-            }
-
             // タイムアウトイベント時の関数を追加する
             if (screenNameForTimeOut != null)
             {
@@ -312,6 +301,18 @@ namespace _2vdm_spec_generator.Services
                 _operationsSb.AppendLine("    タイムアウト時遷移 () ==");
                 _operationsSb.AppendLine("      「画面管理」'現在画面 := /* 仕様に記載なし */");
             }
+
+            // 分岐条件の関数定義を追加
+            if (conditions.Any())
+            {
+                foreach (var condition in conditions)
+                {
+                    _operationsSb.AppendLine("  private");
+                    _operationsSb.AppendLine($"    {condition}: () ==> bool");
+                    _operationsSb.AppendLine($"    {condition}() == is not yet specified;");
+                }
+            }
+
         }
 
         private void ProcessSingleAction(string buttonName, string action)
