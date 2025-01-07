@@ -33,11 +33,11 @@ namespace _2vdm_spec_generator.Services
         private int _currentBlockIndex;
 
         // 初期行の長さをクラスレベルで定義
-        private readonly int initialTypesLength = "types\n".Length;
-        private readonly int initialValuesLength = "values\n".Length;
-        private readonly int initialInstanceVariablesLength = "instance variables\n".Length;
-        private readonly int initialOperationsLength = "operations\n".Length;
-        private readonly int initialFunctionsLength = "functions\n".Length;
+        private int initialTypesLength;
+        private int initialValuesLength;
+        private int initialInstanceVariablesLength;
+        private int initialOperationsLength;
+        private int initialFunctionsLength;
 
         // インデント倍率を定義（例えば、2倍のインデント）
         private readonly double indentMultiplier = 1.5;
@@ -60,6 +60,13 @@ namespace _2vdm_spec_generator.Services
             _instanceVariablesSb.AppendLine("instance variables");
             _operationsSb.AppendLine("operations");
             _functionsSb.AppendLine("functions");
+
+            // 初期長さを実際の StringBuilder の長さに設定
+            initialTypesLength = _typesSb.Length;
+            initialValuesLength = _valueSb.Length;
+            initialInstanceVariablesLength = _instanceVariablesSb.Length;
+            initialOperationsLength = _operationsSb.Length;
+            initialFunctionsLength = _functionsSb.Length;
         }
 
         /// <summary>
