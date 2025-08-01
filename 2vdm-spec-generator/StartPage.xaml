@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="_2vdm_spec_generator.StartPage"
+             Title="スタートページ">
+
+    <Shell.TitleView>
+        <Grid VerticalOptions="Center"
+              HorizontalOptions="Center">
+            <Label Text="スタートページ"
+                   FontSize="30"
+                   FontAttributes="Bold"
+                   HorizontalOptions="Center"
+                   VerticalOptions="Center"
+                   TextColor="Black"/>
+        </Grid>
+    </Shell.TitleView>
+
+    <VerticalStackLayout Padding="30" Spacing="20" VerticalOptions="Center" HorizontalOptions="Center">
+
+        <Label Text="起動モードを選択してください"
+               FontSize="24"
+               HorizontalOptions="Center"/>
+
+        <Button Text="Markdown"
+                WidthRequest="200"
+                Command="{Binding GoToMainPageCommand}"/>
+
+        <Button Text="NoCode"
+                WidthRequest="200"
+                Command="{Binding GoToNoCodePageCommand}"/>
+
+    </VerticalStackLayout>
+</ContentPage>

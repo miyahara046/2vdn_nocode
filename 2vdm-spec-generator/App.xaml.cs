@@ -7,7 +7,8 @@
             try
             {
                 InitializeComponent();
-                MainPage = new AppShell(service);
+                MainPage = new AppShell(service); // Shellを構築
+                Shell.Current.GoToAsync("//StartPage");
             }
             catch (Exception ex)
             {
