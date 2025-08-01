@@ -13,7 +13,7 @@ namespace _2vdm_spec_generator
                 BindingContext = viewModel;
             }
             catch (Exception ex)
-            {   
+            {
                 // エラーメッセージをコンソールに出力
                 // なぜだか以下のコンソールログ出力機能を追加するとエラーが発生しなくなった（気のせいかもしれないが一応メモ）
                 Console.WriteLine($"ページの初期化中にエラーが発生しました:");
@@ -31,6 +31,12 @@ namespace _2vdm_spec_generator
                 };
             }
         }
+
+        private async void OnGoToStartPageClicked(object sender, EventArgs e)
+        {
+            await Shell.Current.GoToAsync("//StartPage");
+        }
+
 
     }
 

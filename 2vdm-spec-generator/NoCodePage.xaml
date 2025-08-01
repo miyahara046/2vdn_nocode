@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="_2vdm_spec_generator.NoCodePage"
+             Title="NoCode">
+
+    <Shell.TitleView>
+        <Grid VerticalOptions="Center"
+              HorizontalOptions="Center">
+            <Label Text="NoCode"
+                   FontSize="30"
+                   FontAttributes="Bold"
+                   HorizontalOptions="Center"
+                   VerticalOptions="Center"
+                   TextColor="Black"/>
+        </Grid>
+    </Shell.TitleView>
+
+    <VerticalStackLayout Padding="20">
+        <Label Text="NoCodeページです"
+               FontSize="24"
+               HorizontalOptions="Center"
+               VerticalOptions="Center"/>
+
+        <Button Text="スタートページに戻る"
+                Command="{Binding GoToStartPageCommand}"
+                Margin="0,20,0,0"/>
+    </VerticalStackLayout>
+
+
+</ContentPage>

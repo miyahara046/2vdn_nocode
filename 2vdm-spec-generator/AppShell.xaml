@@ -21,8 +21,20 @@
     </Shell.TitleView>
 
     <ShellContent
-        Title="MD2VDM++Spec"
+        Title="StartPage"
+        ContentTemplate="{DataTemplate local:StartPage}"
+        Route="StartPage" />
+
+    <!-- MainPage -->
+    <ShellContent
+        Title="MainPage"
         ContentTemplate="{DataTemplate local:MainPage}"
-        Route="MainPage"/>
+        Route="MainPage" />
+
+    <!-- NoCodePage -->
+    <ShellContent
+        Title="NoCodePage"
+        ContentTemplate="{DataTemplate local:NoCodePage}"
+        Route="NoCodePage" />
 
 </Shell>
