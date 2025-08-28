@@ -1,31 +1,39 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:_2vdm_spec_generator.ViewModel"
              x:Class="_2vdm_spec_generator.NoCodePage"
+             x:DataType="vm:NoCodePageViewModel"
              Title="NoCode">
 
-    <Shell.TitleView>
-        <Grid VerticalOptions="Center"
-              HorizontalOptions="Center">
-            <Label Text="NoCode"
-                   FontSize="30"
-                   FontAttributes="Bold"
-                   HorizontalOptions="Center"
-                   VerticalOptions="Center"
-                   TextColor="Black"/>
-        </Grid>
-    </Shell.TitleView>
+    <Grid RowDefinitions="Auto,*" ColumnDefinitions="200,*">
 
-    <VerticalStackLayout Padding="20">
-        <Label Text="NoCodeページです"
-               FontSize="24"
-               HorizontalOptions="Center"
-               VerticalOptions="Center"/>
+        <!-- 上部ボタン行 -->
+        <ScrollView Grid.Row="0" Grid.ColumnSpan="2" Orientation="Horizontal" Padding="10">
+            <HorizontalStackLayout Spacing="10">
+                <Button Text="スタートページに戻る" Command="{Binding GoToStartPageCommand}" />
+                <Button Text="フォルダを選択" Command="{Binding SelectFolderCommand}" />
+                <Button Text="新規 ファイル作成" Command="{Binding CreateNewMdFileCommand}" />
+                <Entry Placeholder="クラス名" WidthRequest="150" Text="{Binding ClassNameToAdd}" />
+                <Button Text="クラスを追加" Command="{Binding AddClassHeadingCommand}" />
+                <Button Text="VDM++ に変換" Command="{Binding ConvertToVdmCommand}" />
+            </HorizontalStackLayout>
+        </ScrollView>
 
-        <Button Text="スタートページに戻る"
-                Command="{Binding GoToStartPageCommand}"
-                Margin="0,20,0,0"/>
-    </VerticalStackLayout>
+        <!-- 左側：フォルダ内ファイル一覧 -->
+        <CollectionView Grid.Row="1" Grid.Column="0" ItemsSource="{Binding FolderItems}">
+            <CollectionView.ItemTemplate>
+                <DataTemplate x:DataType="x:String">
+                    <Label Text="{Binding}" Padding="5" />
+                </DataTemplate>
+            </CollectionView.ItemTemplate>
+        </CollectionView>
 
+        <!-- 右側：作業エリア -->
+        <StackLayout Grid.Row="1" Grid.Column="1" Padding="10">
+            <Label Text="選択中のフォルダ:" FontAttributes="Bold" />
+            <Label Text="{Binding SelectedFolderPath}" LineBreakMode="CharacterWrap" />
+        </StackLayout>
 
+    </Grid>
 </ContentPage>

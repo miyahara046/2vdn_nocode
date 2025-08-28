@@ -5,7 +5,7 @@ namespace _2vdm_spec_generator
         public NoCodePage()
         {
             InitializeComponent();
-            BindingContext = new NoCodePageViewModel();
+            BindingContext = new ViewModel.NoCodePageViewModel();
         }
     }
 }
