@@ -1,4 +1,4 @@
-﻿using _2vdm_spec_generator.Services; // MarkdownToVdmConverter 用
+﻿using _2vdm_spec_generator.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Maui.Controls;
@@ -21,13 +21,26 @@ namespace _2vdm_spec_generator.ViewModel
         [ObservableProperty]
         private string classNameToAdd;
 
+        [ObservableProperty]
+        private string selectedFileName;
+
+        [ObservableProperty]
+        private string markdownContent;
+
+        [ObservableProperty]
+        private string vdmContent;
+
+        [ObservableProperty]
+        private string newFileName;
+
+        [ObservableProperty]
+        private bool isMakeNewFile;
+
         public ObservableCollection<string> FolderItems { get; } = new ObservableCollection<string>();
 
         private readonly string mdFileName = "NewClass.md";
 
-        public NoCodePageViewModel()
-        {
-        }
+        public NoCodePageViewModel() { }
 
         // ===== スタートページへ戻る =====
         [RelayCommand]
@@ -51,12 +64,7 @@ namespace _2vdm_spec_generator.ViewModel
             if (folder != null)
             {
                 SelectedFolderPath = folder.Path;
-                 // 選択フォルダのファイル一覧を更新
-            FolderItems.Clear();
-            foreach (var file in Directory.GetFiles(SelectedFolderPath))
-            {
-                FolderItems.Add(Path.GetFileName(file));
-            }
+                LoadFolderItems();
             }
 #else
             await Application.Current.MainPage.DisplayAlert("未対応", "このプラットフォームではフォルダ選択は未対応です。", "OK");
@@ -67,13 +75,18 @@ namespace _2vdm_spec_generator.ViewModel
         [RelayCommand]
         private void CreateNewMdFile()
         {
-            if (string.IsNullOrWhiteSpace(SelectedFolderPath)) return;
+            if (string.IsNullOrWhiteSpace(SelectedFolderPath) || string.IsNullOrWhiteSpace(NewFileName))
+                return;
 
-            string path = Path.Combine(SelectedFolderPath, mdFileName);
+            string fileName = Path.HasExtension(NewFileName) ? NewFileName : $"{NewFileName}.md";
+            string path = Path.Combine(SelectedFolderPath, fileName);
+
             if (!File.Exists(path))
             {
-                File.WriteAllText(path, "# Markdown VDM Document\n");
-                FolderItems.Add(mdFileName);
+                File.WriteAllText(path, "## New Class\n");
+                LoadFolderItems();
+                NewFileName = "";             // 入力をクリア
+                IsMakeNewFile = false; // 作成後は非表示に戻す
             }
         }
 
@@ -81,29 +94,67 @@ namespace _2vdm_spec_generator.ViewModel
         [RelayCommand]
         private void AddClassHeading()
         {
-            if (string.IsNullOrWhiteSpace(ClassNameToAdd) || string.IsNullOrWhiteSpace(SelectedFolderPath)) return;
+            if (string.IsNullOrWhiteSpace(ClassNameToAdd) || string.IsNullOrWhiteSpace(SelectedFolderPath) || string.IsNullOrWhiteSpace(SelectedFileName))
+                return;
 
-            string path = Path.Combine(SelectedFolderPath, mdFileName);
-            File.AppendAllText(path, $"\n### {ClassNameToAdd}\n");
+            string path = Path.Combine(SelectedFolderPath, SelectedFileName);
+
+            // ファイル読み込み
+            string[] lines = File.Exists(path) ? File.ReadAllLines(path) : new string[] { "" };
+
+            // 一行目を更新
+            if (lines.Length > 0)
+                lines[0] = $"## {ClassNameToAdd}";
+            else
+                lines = new string[] { $"## {ClassNameToAdd}" };
+
+            // ファイルに書き戻す
+            File.WriteAllLines(path, lines);
+
+            // フォルダ一覧を更新（選択は維持）
+            string currentFile = SelectedFileName; // 選択中のファイルを保持
             LoadFolderItems();
+            SelectedFileName = currentFile;        // 選択を復元
+
+            // VDM++ にも変換
+            ConvertToVdm();
+
+            // 右側エディタにも反映
+            MarkdownContent = File.ReadAllText(path);
+
+            // 入力をクリア
+            ClassNameToAdd = "";
         }
+
 
         // ===== VDM++ に変換 =====
         [RelayCommand]
         private void ConvertToVdm()
         {
-            if (string.IsNullOrWhiteSpace(SelectedFolderPath)) return;
+            if (string.IsNullOrWhiteSpace(SelectedFolderPath) || string.IsNullOrWhiteSpace(SelectedFileName)) return;
 
-            string mdPath = Path.Combine(SelectedFolderPath, mdFileName);
+            string mdPath = Path.Combine(SelectedFolderPath, SelectedFileName);
             if (!File.Exists(mdPath)) return;
 
             string markdownContent = File.ReadAllText(mdPath);
             var converter = new MarkdownToVdmConverter();
             string vdmContent = converter.ConvertToVdm(markdownContent);
 
-            string vdmPath = Path.Combine(SelectedFolderPath, Path.ChangeExtension(mdFileName, ".vdmpp"));
+            string vdmPath = Path.ChangeExtension(mdPath, ".vdmpp");
             File.WriteAllText(vdmPath, vdmContent);
-            LoadFolderItems();
+
+            // 右側エディタにも反映
+            VdmContent = vdmContent;
+        }
+
+        // ===== Markdown 保存 =====
+        [RelayCommand]
+        private void SaveMarkdown()
+        {
+            if (string.IsNullOrWhiteSpace(SelectedFolderPath) || string.IsNullOrWhiteSpace(SelectedFileName)) return;
+
+            string path = Path.Combine(SelectedFolderPath, SelectedFileName);
+            File.WriteAllText(path, MarkdownContent);
         }
 
         // ===== フォルダ内ファイル一覧を更新 =====
@@ -114,9 +165,42 @@ namespace _2vdm_spec_generator.ViewModel
             {
                 foreach (var file in Directory.GetFiles(SelectedFolderPath))
                 {
-                    FolderItems.Add(Path.GetFileName(file));
+                    if(Path.GetExtension(file).ToLower() == ".md")
+                        FolderItems.Add(Path.GetFileName(file));
                 }
             }
         }
+        [RelayCommand]
+        private void ShowNewFileEntry()
+        {
+            IsMakeNewFile = true;
+        }
+
+        partial void OnSelectedFileNameChanged(string oldValue, string newValue)
+        {
+            if (string.IsNullOrWhiteSpace(newValue) || string.IsNullOrWhiteSpace(SelectedFolderPath))
+                return;
+
+            string mdPath = Path.Combine(SelectedFolderPath, newValue);
+            if (File.Exists(mdPath))
+            {
+                MarkdownContent = File.ReadAllText(mdPath);
+            }
+            else
+            {
+                MarkdownContent = string.Empty;
+            }
+
+            string vdmPath = Path.ChangeExtension(mdPath, ".vdmpp");
+            if (File.Exists(vdmPath))
+            {
+                VdmContent = File.ReadAllText(vdmPath);
+            }
+            else
+            {
+                VdmContent = string.Empty;
+            }
+        }
+
     }
 }
