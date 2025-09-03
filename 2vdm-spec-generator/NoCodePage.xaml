@@ -1,31 +1,68 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:vm="clr-namespace:_2vdm_spec_generator.ViewModel"
              x:Class="_2vdm_spec_generator.NoCodePage"
+             x:DataType="vm:NoCodePageViewModel"
              Title="NoCode">
 
-    <Shell.TitleView>
-        <Grid VerticalOptions="Center"
-              HorizontalOptions="Center">
-            <Label Text="NoCode"
-                   FontSize="30"
-                   FontAttributes="Bold"
-                   HorizontalOptions="Center"
-                   VerticalOptions="Center"
-                   TextColor="Black"/>
-        </Grid>
-    </Shell.TitleView>
+    <Grid RowDefinitions="Auto,*">
+        <Grid.ColumnDefinitions>
+            <!-- 左側 1/5 -->
+            <ColumnDefinition Width="1*" />
+            <!-- 右側 4/5 -->
+            <ColumnDefinition Width="2*" />
+            <ColumnDefinition Width="2*" />
+        </Grid.ColumnDefinitions>
 
-    <VerticalStackLayout Padding="20">
-        <Label Text="NoCodeページです"
-               FontSize="24"
-               HorizontalOptions="Center"
-               VerticalOptions="Center"/>
+        <!-- 上部ボタン行 -->
+        <ScrollView Grid.Row="0" Grid.ColumnSpan="2" Orientation="Horizontal" Padding="10">
+            <HorizontalStackLayout Spacing="10">
+                <Button Text="スタートページに戻る" Command="{Binding GoToStartPageCommand}" />
+                <Button Text="フォルダを選択" Command="{Binding SelectFolderCommand}" />
+                <Button Text="新規 ファイル作成" Command="{Binding ShowNewFileEntryCommand}"  />
 
-        <Button Text="スタートページに戻る"
-                Command="{Binding GoToStartPageCommand}"
-                Margin="0,20,0,0"/>
-    </VerticalStackLayout>
+                <HorizontalStackLayout Spacing="5" IsVisible="{Binding IsMakeNewFile}">
+                    <Entry Placeholder="ファイル名" WidthRequest="200" Text="{Binding NewFileName}" />
+                    <Button Text="作成" Command="{Binding CreateNewMdFileCommand}" />
+                </HorizontalStackLayout>
+                <Entry Placeholder="クラス名" WidthRequest="150" Text="{Binding ClassNameToAdd}" />
+                <Button Text="クラスを追加" Command="{Binding AddClassHeadingCommand}" />
+                <Button Text="VDM++ に変換" Command="{Binding ConvertToVdmCommand}" />
+                <Button Text="Markdown 保存" Command="{Binding SaveMarkdownCommand}" />
+            </HorizontalStackLayout>
+        </ScrollView>
 
+        <!-- 左側：フォルダ内ファイル一覧 -->
+        <CollectionView Grid.Row="1" Grid.Column="0"
+                        ItemsSource="{Binding FolderItems}"
+                        SelectionMode="Single"
+                        SelectedItem="{Binding SelectedFileName, Mode=TwoWay}">
+            <CollectionView.ItemTemplate>
+                <DataTemplate x:DataType="x:String">
+                    <Label Text="{Binding}" Padding="5" />
+                </DataTemplate>
+            </CollectionView.ItemTemplate>
+        </CollectionView>
 
+        <!-- 右側：作業エリア -->
+        <HorizontalStackLayout Grid.Row="1" Grid.Column="1" Padding="10" Spacing="10">
+
+            <!-- Markdown -->
+            <VerticalStackLayout>
+                <Label Text="Markdown 内容:" FontAttributes="Bold" />
+                <Editor Text="{Binding MarkdownContent}" AutoSize="TextChanges" HeightRequest="400" />
+            </VerticalStackLayout>
+        </HorizontalStackLayout>
+        <!-- VDM++ -->
+        <HorizontalStackLayout Grid.Row="1" Grid.Column="2" Padding="10" Spacing="10">
+            <VerticalStackLayout>
+                <Label Text="VDM++ 内容:" FontAttributes="Bold" />
+                <Editor Text="{Binding VdmContent}" AutoSize="TextChanges" HeightRequest="400" IsReadOnly="True" />
+            </VerticalStackLayout>
+        </HorizontalStackLayout>
+
+        
+
+    </Grid>
 </ContentPage>
