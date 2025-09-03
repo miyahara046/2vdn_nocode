@@ -94,37 +94,35 @@ namespace _2vdm_spec_generator.ViewModel
         [RelayCommand]
         private void AddClassHeading()
         {
-            if (string.IsNullOrWhiteSpace(ClassNameToAdd) || string.IsNullOrWhiteSpace(SelectedFolderPath) || string.IsNullOrWhiteSpace(SelectedFileName))
+            if (string.IsNullOrWhiteSpace(ClassNameToAdd)
+                || string.IsNullOrWhiteSpace(SelectedFolderPath)
+                || string.IsNullOrWhiteSpace(SelectedFileName))
                 return;
 
             string path = Path.Combine(SelectedFolderPath, SelectedFileName);
+            string currentMarkdown = File.Exists(path) ? File.ReadAllText(path) : "";
 
-            // ファイル読み込み
-            string[] lines = File.Exists(path) ? File.ReadAllLines(path) : new string[] { "" };
+            // サービスで Markdown を構築
+            var builder = new UiToMarkdownConverter();
+            string newMarkdown = builder.AddClassHeading(currentMarkdown, ClassNameToAdd);
 
-            // 一行目を更新
-            if (lines.Length > 0)
-                lines[0] = $"## {ClassNameToAdd}";
-            else
-                lines = new string[] { $"## {ClassNameToAdd}" };
+            // ファイルに保存
+            File.WriteAllText(path, newMarkdown);
 
-            // ファイルに書き戻す
-            File.WriteAllLines(path, lines);
+            // VDM++ に変換（既存のコンバーターを使う）
+            var converter = new MarkdownToVdmConverter();
+            string vdmContent = converter.ConvertToVdm(newMarkdown);
+            string vdmPath = Path.ChangeExtension(path, ".vdmpp");
+            File.WriteAllText(vdmPath, vdmContent);
 
-            // フォルダ一覧を更新（選択は維持）
-            string currentFile = SelectedFileName; // 選択中のファイルを保持
-            LoadFolderItems();
-            SelectedFileName = currentFile;        // 選択を復元
-
-            // VDM++ にも変換
-            ConvertToVdm();
-
-            // 右側エディタにも反映
-            MarkdownContent = File.ReadAllText(path);
+            // UI に反映
+            MarkdownContent = newMarkdown;
+            VdmContent = vdmContent;
 
             // 入力をクリア
             ClassNameToAdd = "";
         }
+
 
 
         // ===== VDM++ に変換 =====
