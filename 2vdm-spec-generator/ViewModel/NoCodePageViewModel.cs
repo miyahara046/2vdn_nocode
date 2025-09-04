@@ -71,60 +71,113 @@ namespace _2vdm_spec_generator.ViewModel
 #endif
         }
 
-        // ===== 新規 Markdown ファイル作成 =====
         [RelayCommand]
-        private void CreateNewMdFile()
+        private async Task CreateNewMdFileAsync()
         {
-            if (string.IsNullOrWhiteSpace(SelectedFolderPath) || string.IsNullOrWhiteSpace(NewFileName))
-                return;
+            string newFilePath = string.Empty;
 
-            string fileName = Path.HasExtension(NewFileName) ? NewFileName : $"{NewFileName}.md";
-            string path = Path.Combine(SelectedFolderPath, fileName);
-
-            if (!File.Exists(path))
+            try
             {
-                File.WriteAllText(path, "## New Class\n");
+                if (string.IsNullOrEmpty(selectedFolderPath))
+                {
+                    await Shell.Current.DisplayAlert("エラー", "フォルダが選択されていません。", "OK");
+                    return;
+                }
+
+                // 入力ダイアログを表示
+                string fileName = await Shell.Current.DisplayPromptAsync(
+                    "新規ファイル作成",
+                    "ファイル名を入力してください（拡張子は付けないでください）",
+                    "作成",
+                    "キャンセル",
+                    placeholder: "example"
+                );
+
+                if (string.IsNullOrWhiteSpace(fileName))
+                {
+                    return; // キャンセル or 未入力なら処理終了
+                }
+
+                // .md 拡張子を付与
+                if (!fileName.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
+                {
+                    fileName += ".md";
+                }
+
+                newFilePath = Path.Combine(selectedFolderPath, fileName);
+
+                if (File.Exists(newFilePath))
+                {
+                    await Shell.Current.DisplayAlert("エラー", "同名のファイルが既に存在します。", "OK");
+                    return;
+                }
+
+                // Markdown ファイルを作成（初期内容あり）
+                await File.WriteAllTextAsync(newFilePath, "## New Class\n");
+
+                // FolderItems を更新
                 LoadFolderItems();
-                NewFileName = "";             // 入力をクリア
-                IsMakeNewFile = false; // 作成後は非表示に戻す
+
+                // === 新規作成したファイルを選択して内容を表示 ===
+                SelectedFileName = Path.GetFileName(newFilePath);
+
+                await Shell.Current.DisplayAlert("成功", "新しい Markdown ファイルを作成しました。", "OK");
+            }
+            catch (Exception ex)
+            {
+                await Shell.Current.DisplayAlert("エラー", $"ファイル作成中にエラーが発生しました: {ex.Message}", "OK");
             }
         }
 
-        // ===== クラスを追加 =====
+
+
+
         [RelayCommand]
-        private void AddClassHeading()
+        private async Task AddClassHeadingAsync()
         {
-            if (string.IsNullOrWhiteSpace(ClassNameToAdd) || string.IsNullOrWhiteSpace(SelectedFolderPath) || string.IsNullOrWhiteSpace(SelectedFileName))
+            if (string.IsNullOrWhiteSpace(SelectedFolderPath)
+                || string.IsNullOrWhiteSpace(SelectedFileName))
+            {
+                await Shell.Current.DisplayAlert("エラー", "ファイルが選択されていません。", "OK");
                 return;
+            }
+
+            // 入力ダイアログを表示
+            string className = await Shell.Current.DisplayPromptAsync(
+                "クラス追加",
+                "追加するクラス名を入力してください",
+                "追加",
+                "キャンセル",
+                placeholder: "MyClass"
+            );
+
+            if (string.IsNullOrWhiteSpace(className))
+            {
+                return; // キャンセル or 未入力なら終了
+            }
 
             string path = Path.Combine(SelectedFolderPath, SelectedFileName);
+            string currentMarkdown = File.Exists(path) ? File.ReadAllText(path) : "";
 
-            // ファイル読み込み
-            string[] lines = File.Exists(path) ? File.ReadAllLines(path) : new string[] { "" };
+            // サービスで Markdown を構築
+            var builder = new UiToMarkdownConverter();
+            string newMarkdown = builder.AddClassHeading(currentMarkdown, className);
 
-            // 一行目を更新
-            if (lines.Length > 0)
-                lines[0] = $"## {ClassNameToAdd}";
-            else
-                lines = new string[] { $"## {ClassNameToAdd}" };
+            // ファイルに保存
+            File.WriteAllText(path, newMarkdown);
 
-            // ファイルに書き戻す
-            File.WriteAllLines(path, lines);
+            // VDM++ に変換（既存のコンバーターを使う）
+            var converter = new MarkdownToVdmConverter();
+            string vdmContent = converter.ConvertToVdm(newMarkdown);
+            string vdmPath = Path.ChangeExtension(path, ".vdmpp");
+            File.WriteAllText(vdmPath, vdmContent);
 
-            // フォルダ一覧を更新（選択は維持）
-            string currentFile = SelectedFileName; // 選択中のファイルを保持
-            LoadFolderItems();
-            SelectedFileName = currentFile;        // 選択を復元
-
-            // VDM++ にも変換
-            ConvertToVdm();
-
-            // 右側エディタにも反映
-            MarkdownContent = File.ReadAllText(path);
-
-            // 入力をクリア
-            ClassNameToAdd = "";
+            // UI に反映
+            MarkdownContent = newMarkdown;
+            VdmContent = vdmContent;
         }
+
+
 
 
         // ===== VDM++ に変換 =====
@@ -169,11 +222,6 @@ namespace _2vdm_spec_generator.ViewModel
                         FolderItems.Add(Path.GetFileName(file));
                 }
             }
-        }
-        [RelayCommand]
-        private void ShowNewFileEntry()
-        {
-            IsMakeNewFile = true;
         }
 
         partial void OnSelectedFileNameChanged(string oldValue, string newValue)
