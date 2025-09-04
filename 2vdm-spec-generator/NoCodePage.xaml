@@ -6,81 +6,65 @@
              x:DataType="vm:NoCodePageViewModel"
              Title="NoCode">
 
-
     <!-- メニューバー -->
     <ContentPage.MenuBarItems>
-        <!-- ファイルメニュー -->
         <MenuBarItem Text="ファイル">
-            <MenuFlyoutItem Text="フォルダを選択"
-                                        Command="{Binding SelectFolderCommand}"/>
-            <MenuFlyoutItem Text="新規ファイル作成"
-                                        Command="{Binding ShowNewFileEntryCommand}"/>
+            <MenuFlyoutItem Text="フォルダを選択" Command="{Binding SelectFolderCommand}"/>
+            <MenuFlyoutItem Text="新規ファイル作成" Command="{Binding CreateNewMdFileCommand}"/>
         </MenuBarItem>
-
-        <!-- 変換メニュー -->
         <MenuBarItem Text="変換">
-            <MenuFlyoutItem Text="VDM++に変換"
-                                        Command="{Binding ConvertToVdmCommand}"/>
-            <MenuFlyoutItem Text="保存"
-                                        Command="{Binding SaveMarkdownCommand}"/>
+            <MenuFlyoutItem Text="VDM++に変換" Command="{Binding ConvertToVdmCommand}"/>
+            <MenuFlyoutItem Text="保存" Command="{Binding SaveMarkdownCommand}"/>
         </MenuBarItem>
-
     </ContentPage.MenuBarItems>
 
-    <Grid RowDefinitions="Auto,*">
-        <Grid.ColumnDefinitions>
-            <!-- 左側 1/5 -->
-            <ColumnDefinition Width="1*" />
-            <!-- 右側 4/5 -->
-            <ColumnDefinition Width="2*" />
-            <ColumnDefinition Width="2*" />
-        </Grid.ColumnDefinitions>
+    <Grid RowDefinitions="Auto,*"
+          ColumnDefinitions="1*,2*,2*">
 
-        <!-- 上部ボタン行 -->
-        <ScrollView Grid.Row="0" Grid.ColumnSpan="2" Orientation="Horizontal" Padding="10">
-            <HorizontalStackLayout Spacing="10">
+        <!-- 上部操作ボタン -->
+        <ScrollView Grid.Row="0" Grid.ColumnSpan="3" Orientation="Horizontal" Padding="10">
+            <HorizontalStackLayout Spacing="15">
                 <Button Text="スタートページに戻る" Command="{Binding GoToStartPageCommand}" />
-                <Button Text="新規 ファイル作成" Command="{Binding ShowNewFileEntryCommand}"  />
-
-                <HorizontalStackLayout Spacing="5" IsVisible="{Binding IsMakeNewFile}">
-                    <Entry Placeholder="ファイル名" WidthRequest="200" Text="{Binding NewFileName}" />
-                    <Button Text="作成" Command="{Binding CreateNewMdFileCommand}" />
-                </HorizontalStackLayout>
-                <Entry Placeholder="クラス名" WidthRequest="150" Text="{Binding ClassNameToAdd}" />
                 <Button Text="クラスを追加" Command="{Binding AddClassHeadingCommand}" />
             </HorizontalStackLayout>
         </ScrollView>
 
-        <!-- 左側：フォルダ内ファイル一覧 -->
-        <CollectionView Grid.Row="1" Grid.Column="0"
-                        ItemsSource="{Binding FolderItems}"
-                        SelectionMode="Single"
-                        SelectedItem="{Binding SelectedFileName, Mode=TwoWay}">
-            <CollectionView.ItemTemplate>
-                <DataTemplate x:DataType="x:String">
-                    <Label Text="{Binding}" Padding="5" />
-                </DataTemplate>
-            </CollectionView.ItemTemplate>
-        </CollectionView>
-
-        <!-- 右側：作業エリア -->
-        <HorizontalStackLayout Grid.Row="1" Grid.Column="1" Padding="10" Spacing="10">
-
-            <!-- Markdown -->
+        <!-- 左側：ファイル一覧 -->
+        <Border Grid.Row="1" Grid.Column="0" Stroke="Gray" StrokeThickness="1" Padding="5" Margin="5">
             <VerticalStackLayout>
-                <Label Text="Markdown 内容:" FontAttributes="Bold" />
-                <Editor Text="{Binding MarkdownContent}" AutoSize="TextChanges" HeightRequest="400" />
+                <Label Text="ファイル一覧" FontAttributes="Bold" Margin="0,0,0,5"/>
+                <CollectionView ItemsSource="{Binding FolderItems}"
+                                SelectionMode="Single"
+                                SelectedItem="{Binding SelectedFileName, Mode=TwoWay}">
+                    <CollectionView.ItemTemplate>
+                        <DataTemplate x:DataType="x:String">
+                            <Label Text="{Binding}" Padding="5"/>
+                        </DataTemplate>
+                    </CollectionView.ItemTemplate>
+                </CollectionView>
             </VerticalStackLayout>
-        </HorizontalStackLayout>
-        <!-- VDM++ -->
-        <HorizontalStackLayout Grid.Row="1" Grid.Column="2" Padding="10" Spacing="10">
-            <VerticalStackLayout>
-                <Label Text="VDM++ 内容:" FontAttributes="Bold" />
-                <Editor Text="{Binding VdmContent}" AutoSize="TextChanges" HeightRequest="400" IsReadOnly="True" />
-            </VerticalStackLayout>
-        </HorizontalStackLayout>
+        </Border>
 
-        
+        <!-- 中央：Markdown 編集 -->
+        <Border Grid.Row="1" Grid.Column="1" Stroke="Gray" StrokeThickness="1" Padding="10" Margin="5">
+            <VerticalStackLayout>
+                <Label Text="Markdown" FontSize="16" FontAttributes="Bold" Margin="0,0,0,5"/>
+                <Editor Text="{Binding MarkdownContent}" 
+                        AutoSize="TextChanges" 
+                        HeightRequest="500"/>
+            </VerticalStackLayout>
+        </Border>
+
+        <!-- 右側：VDM++ 表示 -->
+        <Border Grid.Row="1" Grid.Column="2" Stroke="Gray" StrokeThickness="1" Padding="10" Margin="5">
+            <VerticalStackLayout>
+                <Label Text="VDM++" FontSize="16" FontAttributes="Bold" Margin="0,0,0,5"/>
+                <Editor Text="{Binding VdmContent}" 
+                        AutoSize="TextChanges" 
+                        HeightRequest="500" 
+                        IsReadOnly="True"/>
+            </VerticalStackLayout>
+        </Border>
 
     </Grid>
 </ContentPage>
