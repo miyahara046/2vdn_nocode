@@ -6,6 +6,27 @@
              x:DataType="vm:NoCodePageViewModel"
              Title="NoCode">
 
+
+    <!-- メニューバー -->
+    <ContentPage.MenuBarItems>
+        <!-- ファイルメニュー -->
+        <MenuBarItem Text="ファイル">
+            <MenuFlyoutItem Text="フォルダを選択"
+                                        Command="{Binding SelectFolderCommand}"/>
+            <MenuFlyoutItem Text="新規ファイル作成"
+                                        Command="{Binding ShowNewFileEntryCommand}"/>
+        </MenuBarItem>
+
+        <!-- 変換メニュー -->
+        <MenuBarItem Text="変換">
+            <MenuFlyoutItem Text="VDM++に変換"
+                                        Command="{Binding ConvertToVdmCommand}"/>
+            <MenuFlyoutItem Text="保存"
+                                        Command="{Binding SaveMarkdownCommand}"/>
+        </MenuBarItem>
+
+    </ContentPage.MenuBarItems>
+
     <Grid RowDefinitions="Auto,*">
         <Grid.ColumnDefinitions>
             <!-- 左側 1/5 -->
@@ -19,7 +40,6 @@
         <ScrollView Grid.Row="0" Grid.ColumnSpan="2" Orientation="Horizontal" Padding="10">
             <HorizontalStackLayout Spacing="10">
                 <Button Text="スタートページに戻る" Command="{Binding GoToStartPageCommand}" />
-                <Button Text="フォルダを選択" Command="{Binding SelectFolderCommand}" />
                 <Button Text="新規 ファイル作成" Command="{Binding ShowNewFileEntryCommand}"  />
 
                 <HorizontalStackLayout Spacing="5" IsVisible="{Binding IsMakeNewFile}">
@@ -28,8 +48,6 @@
                 </HorizontalStackLayout>
                 <Entry Placeholder="クラス名" WidthRequest="150" Text="{Binding ClassNameToAdd}" />
                 <Button Text="クラスを追加" Command="{Binding AddClassHeadingCommand}" />
-                <Button Text="VDM++ に変換" Command="{Binding ConvertToVdmCommand}" />
-                <Button Text="Markdown 保存" Command="{Binding SaveMarkdownCommand}" />
             </HorizontalStackLayout>
         </ScrollView>
 
