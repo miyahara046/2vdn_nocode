@@ -25,7 +25,10 @@
         <ScrollView Grid.Row="0" Grid.ColumnSpan="3" Orientation="Horizontal" Padding="10">
             <HorizontalStackLayout Spacing="15">
                 <Button Text="スタートページに戻る" Command="{Binding GoToStartPageCommand}" />
-                <Button Text="クラスの種類選択・追加" Command="{Binding AddClassHeadingCommand}" />
+                <Button Text="フォルダの選択" Command="{Binding SelectFolderCommand}" IsVisible="{Binding IsFolderSelected}" /> 
+                <Button Text="クラスの種類選択・追加" Command="{Binding AddClassHeadingCommand}" IsVisible="{Binding IsClassAddButtonVisible}"/>
+                <Button Text="画面の追加" Command="{Binding AddScreenListCommand}" IsVisible="{Binding IsScreenListAddButtonVisible}"/>
+
             </HorizontalStackLayout>
         </ScrollView>
 

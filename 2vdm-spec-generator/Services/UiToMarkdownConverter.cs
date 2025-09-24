@@ -25,16 +25,23 @@ namespace _2vdm_spec_generator.Services
 
         public string AddScreenList(string markdown, string screenName)
         {
-            var lines = string.IsNullOrWhiteSpace(markdown)
-              ? new List<string>()
-              : markdown.Split(Environment.NewLine).ToList();
+            var lines = markdown.Split(Environment.NewLine).ToList();
 
+            // 2行目を必ず空行にする
             if (lines.Count < 2)
-                lines[2] = $"- {screenName}";
-            else
-                lines.Add($"- {screenName}");
+            {
+                lines.Add(string.Empty);
+            }
+            else if (!string.IsNullOrEmpty(lines[1]))
+            {
+                lines[1] = string.Empty;
+            }
+
+            // 3行目以降に追加
+            lines.Add($"- {screenName}");
 
             return string.Join(Environment.NewLine, lines);
         }
+
     }
 }
