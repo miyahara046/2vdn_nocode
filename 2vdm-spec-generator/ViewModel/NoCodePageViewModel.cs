@@ -36,6 +36,15 @@ namespace _2vdm_spec_generator.ViewModel
         [ObservableProperty]
         private bool isMakeNewFile;
 
+        [ObservableProperty]
+        private bool isFolderSelected = true;
+
+        [ObservableProperty]
+        private bool isClassAddButtonVisible = false;
+
+        [ObservableProperty]
+        private bool isScreenListAddButtonVisible = false;
+
         public ObservableCollection<string> FolderItems { get; } = new ObservableCollection<string>();
 
         private readonly string mdFileName = "NewClass.md";
@@ -53,6 +62,7 @@ namespace _2vdm_spec_generator.ViewModel
         [RelayCommand]
         private async Task SelectFolderAsync()
         {
+            {
 #if WINDOWS
             var hwnd = ((MauiWinUIWindow)App.Current.Windows[0].Handler.PlatformView).WindowHandle;
 
@@ -67,8 +77,10 @@ namespace _2vdm_spec_generator.ViewModel
                 LoadFolderItems();
             }
 #else
-            await Application.Current.MainPage.DisplayAlert("未対応", "このプラットフォームではフォルダ選択は未対応です。", "OK");
+                await Application.Current.MainPage.DisplayAlert("未対応", "このプラットフォームではフォルダ選択は未対応です。", "OK");
 #endif
+            }
+            IsFolderSelected = false;
         }
 
         [RelayCommand]
@@ -113,7 +125,7 @@ namespace _2vdm_spec_generator.ViewModel
                 }
 
                 // Markdown ファイルを作成（初期内容あり）
-                await File.WriteAllTextAsync(newFilePath, "## New Class\n");
+                await File.WriteAllTextAsync(newFilePath, "New Class\n");
 
                 // FolderItems を更新
                 LoadFolderItems();
@@ -127,6 +139,8 @@ namespace _2vdm_spec_generator.ViewModel
             {
                 await Shell.Current.DisplayAlert("エラー", $"ファイル作成中にエラーが発生しました: {ex.Message}", "OK");
             }
+
+            IsClassAddButtonVisible = true;
         }
 
 
@@ -159,7 +173,7 @@ namespace _2vdm_spec_generator.ViewModel
             string className = null;
 
             // ② 「画面の追加」の場合だけクラス名を入力させる
-            if (classType == "画面の追加")
+            if (classType == "クラスの追加")
             {
                 string inputName = await Shell.Current.DisplayPromptAsync(
                     "クラス追加",
@@ -204,8 +218,57 @@ namespace _2vdm_spec_generator.ViewModel
             // UI に反映
             MarkdownContent = newMarkdown;
             VdmContent = vdmContent;
+            if (classType == "クラスの追加")
+            {
+                IsClassAddButtonVisible = false;
+                IsScreenListAddButtonVisible = false;
+            }
+            else if (classType == "画面一覧の追加")
+            {
+                IsClassAddButtonVisible = false;
+                IsScreenListAddButtonVisible = true;
+            }
         }
 
+        [RelayCommand]
+        private async Task AddScreenListAsync()
+        {
+            if (string.IsNullOrWhiteSpace(SelectedFolderPath)
+                || string.IsNullOrWhiteSpace(SelectedFileName))
+            {
+                await Shell.Current.DisplayAlert("エラー", "ファイルが選択されていません。", "OK");
+                return;
+            }
+            string screenName = await Shell.Current.DisplayPromptAsync(
+                "画面追加",
+                "画面名を入力してください",
+                accept: "OK",
+                cancel: "キャンセル",
+                placeholder: "MyScreen"
+            );
+            if (string.IsNullOrWhiteSpace(screenName))
+            {
+                return; // 入力キャンセルまたは未入力なら終了
+            }
+            screenName = screenName.Trim();
+            // ファイルパス
+            string path = Path.Combine(SelectedFolderPath, SelectedFileName);
+            string currentMarkdown = File.Exists(path) ? File.ReadAllText(path) : "";
+
+            // 画面追加
+            var builder = new UiToMarkdownConverter();
+            string newMarkdown = builder.AddScreenList(currentMarkdown,screenName);
+            // ファイルに保存
+            File.WriteAllText(path, newMarkdown);
+            // VDM++ に変換（既存のコンバーターを使う）
+            var converter = new MarkdownToVdmConverter();
+            string vdmContent = converter.ConvertToVdm(newMarkdown);
+            string vdmPath = Path.ChangeExtension(path, ".vdmpp");
+            File.WriteAllText(vdmPath, vdmContent);
+            // UI に反映
+            MarkdownContent = newMarkdown;
+            VdmContent = vdmContent;
+        }
 
 
 
@@ -253,31 +316,54 @@ namespace _2vdm_spec_generator.ViewModel
             }
         }
 
-        partial void OnSelectedFileNameChanged(string oldValue, string newValue)
+partial void OnSelectedFileNameChanged(string oldValue, string newValue)
+{
+    if (string.IsNullOrWhiteSpace(newValue) || string.IsNullOrWhiteSpace(SelectedFolderPath))
+        return;
+
+    string mdPath = Path.Combine(SelectedFolderPath, newValue);
+    if (File.Exists(mdPath))
+    {
+        // Markdown読み込み
+        MarkdownContent = File.ReadAllText(mdPath);
+
+        // 先頭行だけ読む
+        string firstLine = File.ReadLines(mdPath).FirstOrDefault() ?? string.Empty;
+
+        // 分岐処理
+        if (firstLine.StartsWith("New Class", StringComparison.OrdinalIgnoreCase))
         {
-            if (string.IsNullOrWhiteSpace(newValue) || string.IsNullOrWhiteSpace(SelectedFolderPath))
-                return;
-
-            string mdPath = Path.Combine(SelectedFolderPath, newValue);
-            if (File.Exists(mdPath))
-            {
-                MarkdownContent = File.ReadAllText(mdPath);
-            }
-            else
-            {
-                MarkdownContent = string.Empty;
-            }
-
-            string vdmPath = Path.ChangeExtension(mdPath, ".vdmpp");
-            if (File.Exists(vdmPath))
-            {
-                VdmContent = File.ReadAllText(vdmPath);
-            }
-            else
-            {
-                VdmContent = string.Empty;
-            }
+            IsClassAddButtonVisible = true;
+            IsScreenListAddButtonVisible = false;
         }
+        else if (firstLine.StartsWith("# 画面一覧"))
+        {
+            IsClassAddButtonVisible = false;
+            IsScreenListAddButtonVisible = true;
+        }
+        else
+        {
+            IsClassAddButtonVisible = false;
+            IsScreenListAddButtonVisible = false;
+        }
+    }
+    else
+    {
+        MarkdownContent = string.Empty;
+    }
+
+    string vdmPath = Path.ChangeExtension(mdPath, ".vdmpp");
+    if (File.Exists(vdmPath))
+    {
+        VdmContent = File.ReadAllText(vdmPath);
+    }
+    else
+    {
+        VdmContent = string.Empty;
+    }
+}
+
+
 
     }
 }
