@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Markdig;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -15,12 +16,25 @@ namespace _2vdm_spec_generator.Services
                 : markdown.Split(Environment.NewLine).ToList();
 
             if (lines.Count > 0)
-                lines[0] = $"## {className}";
+                lines[0] = $"#{className}";
             else
-                lines.Add($"## {className}");
+                lines.Add($"#{className}");
 
             return string.Join(Environment.NewLine, lines);
         }
 
+        public string AddScreenList(string markdown, string screenName)
+        {
+            var lines = string.IsNullOrWhiteSpace(markdown)
+              ? new List<string>()
+              : markdown.Split(Environment.NewLine).ToList();
+
+            if (lines.Count < 2)
+                lines[2] = $"- {screenName}";
+            else
+                lines.Add($"- {screenName}");
+
+            return string.Join(Environment.NewLine, lines);
+        }
     }
 }
