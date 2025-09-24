@@ -142,26 +142,55 @@ namespace _2vdm_spec_generator.ViewModel
                 return;
             }
 
-            // 入力ダイアログを表示
-            string className = await Shell.Current.DisplayPromptAsync(
-                "クラス追加",
-                "追加するクラス名を入力してください",
-                "追加",
+            // ① 種類を選択
+            string classType = await Shell.Current.DisplayActionSheet(
+                "追加するクラスの種類を選んでください",
                 "キャンセル",
-                placeholder: "MyClass"
+                null,
+                "画面一覧の追加",
+                "クラスの追加"
             );
 
-            if (string.IsNullOrWhiteSpace(className))
+            if (classType == null || classType == "キャンセル")
             {
-                return; // キャンセル or 未入力なら終了
+                return; // キャンセル時は終了
             }
 
+            string className = null;
+
+            // ② 「画面の追加」の場合だけクラス名を入力させる
+            if (classType == "画面の追加")
+            {
+                string inputName = await Shell.Current.DisplayPromptAsync(
+                    "クラス追加",
+                    "クラス名を入力してください",
+                    accept: "OK",
+                    cancel: "キャンセル",
+                    placeholder: "MyClass"
+                );
+
+                if (string.IsNullOrWhiteSpace(inputName))
+                {
+                    return; // 入力キャンセルまたは未入力なら終了
+                }
+
+                className = $"# {inputName}";
+
+            }
+
+            // ファイルパス
             string path = Path.Combine(SelectedFolderPath, SelectedFileName);
             string currentMarkdown = File.Exists(path) ? File.ReadAllText(path) : "";
 
-            // サービスで Markdown を構築
+            // 種類によって処理分岐
             var builder = new UiToMarkdownConverter();
-            string newMarkdown = builder.AddClassHeading(currentMarkdown, className);
+            string newMarkdown = classType switch
+            {
+                "画面一覧の追加" => builder.AddClassHeading(currentMarkdown," 画面一覧"),
+                "クラスの追加" => builder.AddClassHeading(currentMarkdown, className),
+                _ => currentMarkdown
+            };
+
 
             // ファイルに保存
             File.WriteAllText(path, newMarkdown);

@@ -25,7 +25,7 @@
         <ScrollView Grid.Row="0" Grid.ColumnSpan="3" Orientation="Horizontal" Padding="10">
             <HorizontalStackLayout Spacing="15">
                 <Button Text="スタートページに戻る" Command="{Binding GoToStartPageCommand}" />
-                <Button Text="クラスを追加" Command="{Binding AddClassHeadingCommand}" />
+                <Button Text="クラスの種類選択・追加" Command="{Binding AddClassHeadingCommand}" />
             </HorizontalStackLayout>
         </ScrollView>
 
