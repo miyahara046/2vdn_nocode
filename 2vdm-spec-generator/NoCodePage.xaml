@@ -1,10 +1,20 @@
 <?xml version="1.0" encoding="utf-8" ?>
-<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+<ContentPage x:Name="Page"
+             xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:vm="clr-namespace:_2vdm_spec_generator.ViewModel"
              x:Class="_2vdm_spec_generator.NoCodePage"
              x:DataType="vm:NoCodePageViewModel"
              Title="NoCode">
+
+    <ContentPage.Resources>
+        <!-- インデント用コンバーター -->
+        <ResourceDictionary>
+            <vm:LevelToIndentConverter x:Key="LevelToIndentConverter"/>
+            <vm:BoolToExpandCollapseConverter x:Key="BoolToExpandCollapseConverter"/>
+            <vm:SelectedToColorConverter x:Key="SelectedToColorConverter"/>
+        </ResourceDictionary>
+    </ContentPage.Resources>
 
     <!-- メニューバー -->
     <ContentPage.MenuBarItems>
@@ -18,43 +28,60 @@
         </MenuBarItem>
     </ContentPage.MenuBarItems>
 
-    <Grid RowDefinitions="Auto,*"
-          ColumnDefinitions="1*,2*,2*">
+    <Grid RowDefinitions="0.15*,0.85*" ColumnDefinitions="1*,2*,2*">
 
         <!-- 上部操作ボタン -->
         <ScrollView Grid.Row="0" Grid.ColumnSpan="3" Orientation="Horizontal" Padding="10">
-            <HorizontalStackLayout Spacing="15">
+            <HorizontalStackLayout Spacing="15" VerticalOptions="Center">
                 <Button Text="スタートページに戻る" Command="{Binding GoToStartPageCommand}" />
-                <Button Text="フォルダの選択" Command="{Binding SelectFolderCommand}" IsVisible="{Binding IsFolderSelected}" /> 
+                <Button Text="フォルダの選択" Command="{Binding SelectFolderCommand}" IsVisible="{Binding IsFolderSelected}" />
                 <Button Text="クラスの種類選択・追加" Command="{Binding AddClassHeadingCommand}" IsVisible="{Binding IsClassAddButtonVisible}"/>
                 <Button Text="画面の追加" Command="{Binding AddScreenListCommand}" IsVisible="{Binding IsScreenListAddButtonVisible}"/>
-
             </HorizontalStackLayout>
         </ScrollView>
 
         <!-- 左側：ファイル一覧 -->
         <Border Grid.Row="1" Grid.Column="0" Stroke="Gray" StrokeThickness="1" Padding="5" Margin="5">
-            <VerticalStackLayout>
-                <Label Text="ファイル一覧" FontAttributes="Bold" Margin="0,0,0,5"/>
-                <CollectionView ItemsSource="{Binding FolderItems}"
-                                SelectionMode="Single"
-                                SelectedItem="{Binding SelectedFileName, Mode=TwoWay}">
-                    <CollectionView.ItemTemplate>
-                        <DataTemplate x:DataType="x:String">
-                            <Label Text="{Binding}" Padding="5"/>
-                        </DataTemplate>
-                    </CollectionView.ItemTemplate>
-                </CollectionView>
-            </VerticalStackLayout>
+            <CollectionView ItemsSource="{Binding FolderItems}">
+                <CollectionView.ItemTemplate>
+                    <DataTemplate x:DataType="vm:FolderItem">
+                        <HorizontalStackLayout Padding="0,2" IsVisible="{Binding IsVisible}" Spacing="2">
+
+                            <!-- フォルダ折りたたみラベル -->
+                            <Label Text="{Binding IsExpanded, Converter={StaticResource BoolToExpandCollapseConverter}}"
+                                    IsVisible="{Binding IsFolder}"
+                                    FontSize="15"
+                                    VerticalOptions="Center"
+                                       TextColor="Black">
+                                <Label.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type vm:NoCodePageViewModel}}, Path=ToggleExpandCommand}"
+                                              CommandParameter="{Binding}" />
+                                </Label.GestureRecognizers>
+                            </Label>
+
+                            <!-- ファイル / フォルダ名 -->
+                            <Label Text="{Binding Name}"
+                                   VerticalOptions="Center"
+                                   Padding="{Binding Level, Converter={StaticResource LevelToIndentConverter}}"
+                                   BackgroundColor="{Binding ., Converter={StaticResource SelectedToColorConverter}, ConverterParameter={x:Reference Page}}">
+                                <Label.GestureRecognizers>
+                                    <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type vm:NoCodePageViewModel}}, Path=SelectItemCommand}"
+                                              CommandParameter="{Binding}" />
+                                </Label.GestureRecognizers>
+                            </Label>
+
+                        </HorizontalStackLayout>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+            
         </Border>
 
         <!-- 中央：Markdown 編集 -->
         <Border Grid.Row="1" Grid.Column="1" Stroke="Gray" StrokeThickness="1" Padding="10" Margin="5">
             <VerticalStackLayout>
                 <Label Text="Markdown" FontSize="16" FontAttributes="Bold" Margin="0,0,0,5"/>
-                <Editor Text="{Binding MarkdownContent}" 
-                        AutoSize="TextChanges" 
-                        HeightRequest="500"/>
+                <Editor Text="{Binding MarkdownContent}" AutoSize="TextChanges" VerticalOptions="FillAndExpand"/>
             </VerticalStackLayout>
         </Border>
 
@@ -62,12 +89,8 @@
         <Border Grid.Row="1" Grid.Column="2" Stroke="Gray" StrokeThickness="1" Padding="10" Margin="5">
             <VerticalStackLayout>
                 <Label Text="VDM++" FontSize="16" FontAttributes="Bold" Margin="0,0,0,5"/>
-                <Editor Text="{Binding VdmContent}" 
-                        AutoSize="TextChanges" 
-                        HeightRequest="500" 
-                        IsReadOnly="True"/>
+                <Editor Text="{Binding VdmContent}" AutoSize="TextChanges" VerticalOptions="FillAndExpand" IsReadOnly="True"/>
             </VerticalStackLayout>
         </Border>
-
     </Grid>
 </ContentPage>
