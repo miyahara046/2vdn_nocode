@@ -143,7 +143,16 @@ namespace _2vdm_spec_generator.ViewModel
         [RelayCommand]
         private async Task CreateNewMdFileAsync()
         {
-            if (string.IsNullOrEmpty(SelectedFolderPath)) return;
+            if (SelectedItem == null)
+            {
+                await Shell.Current.DisplayAlert("エラー", "ファイルまたはフォルダが選択されていません", "OK");
+                return;
+            }
+
+            // 追加先のディレクトリを決定
+            string targetDir = SelectedItem.IsFile
+                ? Path.GetDirectoryName(SelectedItem.FullPath)  // ファイルなら親ディレクトリ
+                : SelectedItem.FullPath;                        // フォルダならそのフォルダ直下
 
             string fileName = await Shell.Current.DisplayPromptAsync(
                 "新規ファイル作成",
@@ -154,20 +163,26 @@ namespace _2vdm_spec_generator.ViewModel
             if (string.IsNullOrWhiteSpace(fileName)) return;
             if (!fileName.EndsWith(".md")) fileName += ".md";
 
-            string newPath = Path.Combine(SelectedFolderPath, fileName);
+            string newPath = Path.Combine(targetDir, fileName);
             if (File.Exists(newPath))
             {
                 await Shell.Current.DisplayAlert("エラー", "同名ファイルが存在します", "OK");
                 return;
             }
 
+            // とりあえず中身はテンプレートを用意
             File.WriteAllText(newPath, "New Class\n");
 
+            // フォルダアイテムをリロード
             LoadFolderItems();
+
+            // 作ったファイルを選択状態にして読み込み
             SelectedItem = FolderItems.FirstOrDefault(f => f.FullPath == newPath);
             LoadMarkdownAndVdm(newPath);
+
             IsClassAddButtonVisible = true;
         }
+
 
         // ===== Markdown保存 =====
         [RelayCommand]
