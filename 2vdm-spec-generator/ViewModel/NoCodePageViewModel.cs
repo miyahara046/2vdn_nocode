@@ -37,7 +37,8 @@ namespace _2vdm_spec_generator.ViewModel
         // フォルダが選択されたか (UI の切り替え用フラグ)
         [ObservableProperty] private bool isFolderSelected = true;
 
-
+        [ObservableProperty]
+        private ObservableCollection<GuiElement> guiElements = new();
 
         // フォルダ・ファイルのツリーを表すコレクション
         // FolderItem 型は Name, FullPath, Level, IsExpanded, IsVisible, IsFolder, IsFile 等のプロパティを持つ想定である。
@@ -357,17 +358,26 @@ namespace _2vdm_spec_generator.ViewModel
         {
             await Shell.Current.GoToAsync("//StartPage");
         }
+
+        partial void OnMarkdownContentChanged(string value)
+        {
+            // Markdownが変更されたらGUI要素を更新
+            var converter = new MarkdownToUiConverter();
+            GuiElements = new ObservableCollection<GuiElement>(converter.Convert(value));
+        }
+
     }
     public enum GuiElementType
     {
-        Button,
-        Event,
-        Timeout
+        Button, //ボタン
+        Event, //イベント
+        Timeout, //タイムアウト
+        Screen //画面
     }
 
     public class GuiElement
     {
-        public GuiElementType Type { get; set; }   // Button / Event / Timeout
+        public GuiElementType Type { get; set; }   // Button / Event / Timeout / Screen
         public string Name { get; set; }
         public string Description { get; set; }
     }
