@@ -79,24 +79,22 @@
 
         </Border>
 
-        <!-- 中央：GUI表示 -->
+        <!-- 中央：GUI表示（ダイアグラム） -->
         <Border Grid.Row="1" Grid.Column="1" Stroke="Gray" StrokeThickness="1" Padding="10" Margin="5">
-            <VerticalStackLayout>
-                <Label Text="GUIプレビュー" FontSize="16" FontAttributes="Bold" Margin="0,0,0,5"/>
-                <CollectionView ItemsSource="{Binding GuiElements}">
-                    <CollectionView.ItemTemplate>
-                        <DataTemplate x:DataType="vm:GuiElement">
-                            <Frame Margin="0,8" Padding="5,2" BorderColor="Black" BackgroundColor="#E0BBE4" CornerRadius="8">
-                                <VerticalStackLayout>
-                                    <Label Text="{Binding Name}" FontAttributes="Bold" FontSize="20"/>
-                                    <Label Text="{Binding Description}" FontSize="16" TextColor="Gray"/>
-                                </VerticalStackLayout>
-                            </Frame>
-                        </DataTemplate>
-                    </CollectionView.ItemTemplate>
-                </CollectionView>
-            </VerticalStackLayout>
+            <Grid RowDefinitions="Auto, * ">
+                <Label Text="NGダイアグラム" FontSize="16" FontAttributes="Bold" Margin="0,0,0,5"/>
+                <ScrollView 
+            VerticalOptions="FillAndExpand" 
+            HorizontalOptions="FillAndExpand">
+                    <ContentView x:Name="DiagramContainer"
+                     BackgroundColor="WhiteSmoke"
+                     VerticalOptions="Start"
+                     HorizontalOptions="FillAndExpand"/>
+
+                </ScrollView>
+            </Grid>
         </Border>
+
 
         <!-- 右側：VDM++ 表示 -->
         <Border Grid.Row="1" Grid.Column="2" Stroke="Gray" StrokeThickness="1" Padding="10" Margin="5">
@@ -107,3 +105,4 @@
         </Border>
     </Grid>
 </ContentPage>
+

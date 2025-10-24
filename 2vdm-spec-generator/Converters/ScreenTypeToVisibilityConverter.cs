@@ -12,6 +12,7 @@ namespace _2vdm_spec_generator.Converters
             if (value is GuiElementType type)
             {
                 return type == GuiElementType.Screen;
+                return type == GuiElementType.Button;
             }
             return false;
         }

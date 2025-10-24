@@ -379,6 +379,8 @@ namespace _2vdm_spec_generator.ViewModel
     {
         public GuiElementType Type { get; set; }   // Button / Event / Timeout / Screen
         public string Name { get; set; }
+        public string Target { get; set; }
+
         public string Description { get; set; }
     }
 

@@ -35,44 +35,66 @@ namespace _2vdm_spec_generator.Services
                 }
                 return elements;
             }
-
-            // それ以外は従来通り
-            foreach (var line in lines)
+            else if (lines[0].Trim().StartsWith("## ")) // '## 'で始まる行をすべて許容する
             {
-                var match = Regex.Match(line, @"^##\s*Button:\s*(.+?)\s*-\s*(.+)$");
-                if (match.Success)
+                // 2行目（index=1）だけを見て Timeout 名を抽出（"- " の後ろから最初の 'で' まで）
+                if (lines.Count > 1)
                 {
-                    elements.Add(new GuiElement
+                    var second = lines[1].Trim();
+                    if (second.StartsWith("- "))
                     {
-                        Type = GuiElementType.Button,
-                        Name = match.Groups[1].Value.Trim(),
-                        Description = match.Groups[2].Value.Trim()
-                    });
-                    continue;
+                        var content = second.Length > 2 ? second.Substring(2).Trim() : string.Empty;
+                        var idx = content.IndexOf('で');
+                        if (idx > 0)
+                        {
+                            var name = content.Substring(0, idx).Trim();
+                            elements.Add(new GuiElement
+                            {
+                                Type = GuiElementType.Timeout,
+                                Name = name,
+                                Description = ""
+                            });
+                            // Timeout が見つかっても、ボタン一覧などの検出を行いたければ return を外して続行できます。
+                            // 今回は2行目で Timeout を取ったらその段階で返す挙動を維持します。
+                          
+                        }
+                    }
                 }
-                match = Regex.Match(line, @"^##\s*Event:\s*(.+?)\s*-\s*(.+)$");
-                if (match.Success)
+
+                // 3行目以降（index=2 から）で "### 有効ボタン一覧" を探し、その下の "- " 行を Button として追加
+                if (lines.Count > 2)
                 {
-                    elements.Add(new GuiElement
+                    for (int i = 2; i < lines.Count; i++)
                     {
-                        Type = GuiElementType.Event,
-                        Name = match.Groups[1].Value.Trim(),
-                        Description = match.Groups[2].Value.Trim()
-                    });
-                    continue;
+                        var line = lines[i].Trim();
+                        if (line.StartsWith("### 有効ボタン一覧"))
+                        {
+                            for (int k = i + 1; k < lines.Count; k++)
+                            {
+                                var sub = lines[k].Trim();
+                                if (sub.StartsWith("- "))
+                                {
+                                    var name = sub.Substring(2).Trim();
+                                    elements.Add(new GuiElement
+                                    {
+                                        Type = GuiElementType.Button,
+                                        Name = name,
+                                        Description = ""
+                                    });
+                                }
+                                else if (sub.StartsWith("### ") || sub.StartsWith("## "))
+                                {
+                                    // 次のセクションで終了
+                                    break;
+                                }
+                            }
+                            return elements;
+                        }
+                    }
                 }
-                match = Regex.Match(line, @"^##\s*Timeout:\s*(.+?)\s*-\s*(.+)$");
-                if (match.Success)
-                {
-                    elements.Add(new GuiElement
-                    {
-                        Type = GuiElementType.Timeout,
-                        Name = match.Groups[1].Value.Trim(),
-                        Description = match.Groups[2].Value.Trim()
-                    });
-                    continue;
-                }
+                return elements;
             }
+           
             return elements;
         }
     }
