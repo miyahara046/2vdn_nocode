@@ -372,7 +372,8 @@ namespace _2vdm_spec_generator.ViewModel
         Button, //ボタン
         Event, //イベント
         Timeout, //タイムアウト
-        Screen //画面
+        Screen, //画面
+        Operation //操作
     }
 
     public class GuiElement

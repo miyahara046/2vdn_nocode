@@ -22,7 +22,6 @@ namespace _2vdm_spec_generator.View
                 InputTransparent = true
             };
 
-            // ContentView（このクラス）は通常のヒットテスト挙動（false）のままにする
             Content = _graphicsView;
         }
 
@@ -33,47 +32,34 @@ namespace _2vdm_spec_generator.View
             _drawable.Elements = elementList;
 
             // ノードの数から必要な高さを計算する
-            // GuiDiagramDrawableのレイアウト設定を使用: nodeH=60, spacing=120, startY=20
-            const double nodeH = 60, spacing = 120, startY = 20;
-
-            // H = startY + (要素数 * spacing) - (spacing - nodeH)
-            // H = 20 + (要素数 * 120) - 60
-            // 要素が1つの場合: 20 + 1 * 120 = 140。ノードの上端Y=20、ノード下端Y=80。
-            // 要素がN個の場合、最後のノードの上端Yは 20 + (N-1) * 120。下端Yは 20 + (N-1) * 120 + 60
+            const double nodeH = 50, spacing = 80, startY = 5;
 
             double requiredHeight = 0;
             if (elementList.Count > 0)
             {
-                // 1. 最後のノードの上端Y座標を計算
-                // (最初のノード(i=0)の開始Y) + (ノード数-1) * spacing 
+                // 最後のノードの上端Y座標を計算
                 double lastNodeY = startY + (elementList.Count - 1) * spacing;
 
-                // 2. 最後のノードの下端Y座標を計算
-                // lastNodeY + nodeH
+                // 最後のノードの下端Y座標を計算
                 double lastNodeBottom = lastNodeY + nodeH;
 
-                // 3. 最後のノードの下にも少し余白 (例: startYと同じ20) を加える
-                requiredHeight = lastNodeBottom + startY;
+                // 最後のノードの下にも少し余白 (例: 50) を加える
+                requiredHeight = lastNodeBottom + 50;
 
-                // requiredHeightが最低限必要な高さ（例: 画面に何も表示がない場合）を下回らないように
-                requiredHeight = Math.Max(requiredHeight, 10); ;
+                requiredHeight = Math.Max(requiredHeight, 100);
             }
             else
             {
                 // 要素がない場合は最低限の高さ
-                requiredHeight = 10;
+                requiredHeight = 100;
             }
 
             // 計算された高さをHeightRequestに設定
-            // ※ 少なくとも親コンテナ（ScrollView）の最小サイズは確保したいが、
-            // ScrollViewがFillAndExpandなので、コンテンツサイズが優先される。
             _graphicsView.HeightRequest = requiredHeight;
             this.HeightRequest = requiredHeight;
             this.InvalidateMeasure();
             _graphicsView.Invalidate();
         }
-
-
     }
 
     public class GuiDiagramDrawable : IDrawable
@@ -82,50 +68,103 @@ namespace _2vdm_spec_generator.View
 
         public void Draw(ICanvas canvas, RectF dirtyRect)
         {
+            // 背景を描画
             canvas.FillColor = Colors.White;
             canvas.FillRectangle(dirtyRect);
 
             if (Elements == null || Elements.Count == 0) return;
 
-            float nodeW = 160, nodeH = 60, spacing = 120;
-            float startX = 50, startY = 20;
+            // レイアウト定数
+            float nodeW = 160, nodeH = 50, spacing = 80;
+            float startX = 50, startY = 5;
 
+            // ノードの位置を計算
             var positions = new Dictionary<string, PointF>();
             for (int i = 0; i < Elements.Count; i++)
                 positions[Elements[i].Name] = new PointF(startX, startY + i * spacing);
 
-            // draw connections
+            // draw connections (接続線)
             canvas.StrokeColor = Colors.Gray;
             canvas.StrokeSize = 2;
             foreach (var el in Elements)
             {
+                // Targetが設定されており、かつTargetがpositionsに存在するノードに対して線を描画
                 if (!string.IsNullOrEmpty(el.Target) && positions.ContainsKey(el.Target))
                 {
                     var f = positions[el.Name];
                     var t = positions[el.Target];
+                    // 接続点はノードの右端中央と左端中央
                     var s = new PointF(f.X + nodeW, f.Y + nodeH / 2);
                     var e = new PointF(t.X, t.Y + nodeH / 2);
+
                     canvas.DrawLine(s, e);
                     DrawArrow(canvas, s, e);
                 }
             }
 
-            // draw nodes
+            // draw nodes (ノード本体)
             foreach (var el in Elements)
             {
                 var p = positions[el.Name];
                 var r = new RectF(p.X, p.Y, nodeW, nodeH);
+
+                // 1. ノードの色を設定
                 canvas.FillColor = el.Type switch
                 {
-                    GuiElementType.Screen => Colors.Purple,
+                    GuiElementType.Screen => Colors.Lavender,
                     GuiElementType.Button => Colors.LightBlue,
                     GuiElementType.Event => Colors.LightGreen,
                     GuiElementType.Timeout => Colors.Pink,
+                    GuiElementType.Operation => Colors.LightGreen, // OperationはEventと同じ色
                     _ => Colors.LightGray
                 };
-                canvas.FillRoundedRectangle(r, 8);
+
+                // 2. Typeに応じて異なる図形を描画
                 canvas.StrokeColor = Colors.Black;
-                canvas.DrawRoundedRectangle(r, 8);
+
+                switch (el.Type)
+                {
+                    case GuiElementType.Screen:
+                        // スクリーン: 角丸長方形
+                        canvas.FillRoundedRectangle(r, 8);
+                        canvas.DrawRoundedRectangle(r, 8);
+                        break;
+
+                    case GuiElementType.Button:
+                        // ボタン: 楕円（円）
+                        canvas.FillEllipse(r);
+                        canvas.DrawEllipse(r);
+                        break;
+
+                    case GuiElementType.Event:
+                    case GuiElementType.Operation: // OperationはEventと同じ図形
+                        // イベント/Operation: ひし形
+                        using (var path = new PathF())
+                        {
+                            path.MoveTo(r.X + r.Width / 2, r.Y);      // 上
+                            path.LineTo(r.Right, r.Y + r.Height / 2); // 右
+                            path.LineTo(r.X + r.Width / 2, r.Bottom); // 下
+                            path.LineTo(r.X, r.Y + r.Height / 2);     // 左
+                            path.Close();
+                            canvas.FillPath(path);
+                            canvas.DrawPath(path);
+                        }
+                        break;
+
+                    case GuiElementType.Timeout:
+                        // タイムアウト: 長方形
+                        canvas.FillRectangle(r);
+                        canvas.DrawRectangle(r);
+                        break;
+
+                    default:
+                        // その他: 角丸長方形
+                        canvas.FillRoundedRectangle(r, 8);
+                        canvas.DrawRoundedRectangle(r, 8);
+                        break;
+                }
+
+                // 3. テキストを描画
                 canvas.FontColor = Colors.Black;
                 canvas.FontSize = 14;
                 canvas.DrawString(el.Name, r, HorizontalAlignment.Center, VerticalAlignment.Center);
@@ -135,13 +174,14 @@ namespace _2vdm_spec_generator.View
         private void DrawArrow(ICanvas canvas, PointF start, PointF end)
         {
             float size = 6f;
+            // 接続線と同じ色で矢印を描画
+            canvas.StrokeColor = Colors.Gray;
+            canvas.StrokeSize = 2;
             float angle = MathF.Atan2(end.Y - start.Y, end.X - start.X);
             var p1 = new PointF(end.X - size * MathF.Cos(angle - 0.3f), end.Y - size * MathF.Sin(angle - 0.3f));
             var p2 = new PointF(end.X - size * MathF.Cos(angle + 0.3f), end.Y - size * MathF.Sin(angle + 0.3f));
             canvas.DrawLine(end, p1);
             canvas.DrawLine(end, p2);
         }
-
-
     }
 }

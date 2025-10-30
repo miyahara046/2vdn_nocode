@@ -82,15 +82,17 @@
         <!-- 中央：GUI表示（ダイアグラム） -->
         <Border Grid.Row="1" Grid.Column="1" Stroke="Gray" StrokeThickness="1" Padding="10" Margin="5">
             <Grid RowDefinitions="Auto, * ">
-                <Label Text="NGダイアグラム" FontSize="16" FontAttributes="Bold" Margin="0,0,0,5"/>
-                <ScrollView 
-            VerticalOptions="FillAndExpand" 
-            HorizontalOptions="FillAndExpand">
-                    <ContentView x:Name="DiagramContainer"
-                     BackgroundColor="WhiteSmoke"
-                     VerticalOptions="Start"
-                     HorizontalOptions="FillAndExpand"/>
 
+                <Label Text="Condition Transition Map" FontSize="16" FontAttributes="Bold" Margin="0,0,0,5"/>
+
+                <ScrollView Grid.Row="1"  
+             VerticalOptions="FillAndExpand" 
+             HorizontalOptions="FillAndExpand">
+
+                    <ContentView x:Name="DiagramContainer"
+                 BackgroundColor="WhiteSmoke"
+                 VerticalOptions="StartAndExpand"
+                 HorizontalOptions="FillAndExpand"/>
                 </ScrollView>
             </Grid>
         </Border>
