@@ -34,6 +34,9 @@ namespace _2vdm_spec_generator.ViewModel
         // 画面一覧追加ボタンを表示するかどうか
         [ObservableProperty] private bool isScreenListAddButtonVisible;
 
+        //クラスに関するボタンを表示するかどうか（ボタン追加・イベント追加・タイムアウト追加）
+        [ObservableProperty] private bool isClassAllButtonVisible;
+
         // フォルダが選択されたか (UI の切り替え用フラグ)
         [ObservableProperty] private bool isFolderSelected = true;
 
@@ -171,20 +174,23 @@ namespace _2vdm_spec_generator.ViewModel
             //  - 先頭が "# 画面一覧" なら画面一覧編集用ボタンを表示
             //  - それ以外はクラス追加用ボタンを表示
             string firstLine = File.ReadLines(path).FirstOrDefault() ?? "";
-            if (firstLine.StartsWith("## ", StringComparison.OrdinalIgnoreCase))
+            if (firstLine.TrimStart().StartsWith("##", StringComparison.OrdinalIgnoreCase))
             {
                 IsClassAddButtonVisible = false;
                 IsScreenListAddButtonVisible = false;
+                IsClassAllButtonVisible = true;
             }
             else if (firstLine.StartsWith("# 画面一覧"))
             {
                 IsClassAddButtonVisible = false;
                 IsScreenListAddButtonVisible = true;
+                IsClassAllButtonVisible = false;
             }
             else
             {
                 IsClassAddButtonVisible = true;
                 IsScreenListAddButtonVisible = false;
+                IsClassAllButtonVisible = false;
             }
         }
 
@@ -339,6 +345,32 @@ namespace _2vdm_spec_generator.ViewModel
 
             var builder = new UiToMarkdownConverter();
             string newMarkdown = builder.AddScreenList(currentMarkdown, screenName.Trim());
+            File.WriteAllText(path, newMarkdown);
+
+            var converter = new MarkdownToVdmConverter();
+            string vdmContent = converter.ConvertToVdm(newMarkdown);
+            File.WriteAllText(Path.ChangeExtension(path, ".vdmpp"), vdmContent);
+
+            // プロパティを更新して UI に反映させる
+            MarkdownContent = newMarkdown;
+            VdmContent = vdmContent;
+        }
+
+        [RelayCommand]
+        private async Task AddBottonAsync()
+        {
+            if (SelectedItem == null || !SelectedItem.IsFile) return;
+
+            string buttonName = await Shell.Current.DisplayPromptAsync(
+                "ボタン", "ボタン名を入力してください", "OK", "キャンセル", placeholder: "Buton"
+            );
+            if (string.IsNullOrWhiteSpace(buttonName)) return;
+
+            string path = SelectedItem.FullPath;
+            string currentMarkdown = File.ReadAllText(path);
+
+            var builder = new UiToMarkdownConverter();
+            string newMarkdown = builder.AddButton(currentMarkdown, buttonName.Trim());
             File.WriteAllText(path, newMarkdown);
 
             var converter = new MarkdownToVdmConverter();

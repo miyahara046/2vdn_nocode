@@ -39,6 +39,7 @@
                 <Button Text="フォルダの選択" Command="{Binding SelectFolderCommand}" IsVisible="{Binding IsFolderSelected}" />
                 <Button Text="クラスの種類選択・追加" Command="{Binding AddClassHeadingCommand}" IsVisible="{Binding IsClassAddButtonVisible}"/>
                 <Button Text="画面の追加" Command="{Binding AddScreenListCommand}" IsVisible="{Binding IsScreenListAddButtonVisible}"/>
+                <Button Text="ボタンの追加" Command="{Binding AddBottonCommand}" IsVisible="{Binding IsClassAllButtonVisible}"/>
             </HorizontalStackLayout>
         </ScrollView>
 
