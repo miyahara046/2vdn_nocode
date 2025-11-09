@@ -131,5 +131,65 @@ namespace _2vdm_spec_generator.Services
             return string.Join(Environment.NewLine, lines);
         }
 
+        // 新規: イベント追加（ボタン選択時の処理を想定）
+        public string AddEvent(string markdown, string buttonName, string eventTarget)
+        {
+            string[] newLineSeparators = { Environment.NewLine, "\r\n", "\n", "\r" };
+            var lines = new List<string>(markdown.Split(newLineSeparators, StringSplitOptions.None));
+
+            const string eventHeading = "### イベント一覧";
+            int eventHeadingIndex = -1;
+
+            // 先頭付近にイベント見出しがあるか探す (安全のため最初の 10 行を探索)
+            for (int i = 0; i < Math.Min(lines.Count, 10); i++)
+            {
+                if (lines[i].Trim() == eventHeading)
+                {
+                    eventHeadingIndex = i;
+                    break;
+                }
+            }
+
+            int insertionIndex;
+            if (eventHeadingIndex != -1)
+            {
+                // 見出しがある場合は、そのセクションの末尾を探して挿入
+                insertionIndex = eventHeadingIndex + 1;
+                while (insertionIndex < lines.Count)
+                {
+                    var t = lines[insertionIndex].Trim();
+                    if (string.IsNullOrEmpty(t) || t.StartsWith("### ") || t.StartsWith("## ") || t.StartsWith("# ")) break;
+                    insertionIndex++;
+                }
+            }
+            else
+            {
+                // 見出しがない場合は適切な位置に新規挿入（既存のヘッダーの後など）
+                int insertAfter = -1;
+                for (int i = 0; i < Math.Min(lines.Count, 6); i++)
+                {
+                    if (lines[i].Trim().StartsWith("## ") || lines[i].Trim().StartsWith("# "))
+                    {
+                        insertAfter = i;
+                    }
+                }
+
+                insertionIndex = (insertAfter >= 0) ? insertAfter + 1 : lines.Count;
+
+                // 空行と見出しを追加
+                if (insertionIndex > lines.Count) insertionIndex = lines.Count;
+                lines.Insert(insertionIndex, string.Empty);
+                insertionIndex++;
+                lines.Insert(insertionIndex, eventHeading);
+                insertionIndex++;
+            }
+
+            // フォーマット: "- {ボタン名}押下 → {イベント先}"
+            var newLine = $"- {buttonName}押下 → {eventTarget}";
+            lines.Insert(insertionIndex, newLine);
+
+            return string.Join(Environment.NewLine, lines);
+        }
+
     }
 }

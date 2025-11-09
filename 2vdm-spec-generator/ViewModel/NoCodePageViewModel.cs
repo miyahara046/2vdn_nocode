@@ -323,9 +323,7 @@ namespace _2vdm_spec_generator.ViewModel
             MarkdownContent = newMarkdown;
             VdmContent = vdmContent;
 
-            // ボタンの表示状態を更新
-            IsClassAddButtonVisible = classType == "クラスの追加";
-            IsScreenListAddButtonVisible = classType == "画面一覧の追加";
+            LoadMarkdownAndVdm(path);
         }
 
         // 画面を追加する専用メソッド。画面名を入力して、UiToMarkdownConverter.AddScreenList を呼ぶ。
@@ -371,6 +369,55 @@ namespace _2vdm_spec_generator.ViewModel
 
             var builder = new UiToMarkdownConverter();
             string newMarkdown = builder.AddButton(currentMarkdown, buttonName.Trim());
+            File.WriteAllText(path, newMarkdown);
+
+            var converter = new MarkdownToVdmConverter();
+            string vdmContent = converter.ConvertToVdm(newMarkdown);
+            File.WriteAllText(Path.ChangeExtension(path, ".vdmpp"), vdmContent);
+
+            // プロパティを更新して UI に反映させる
+            MarkdownContent = newMarkdown;
+            VdmContent = vdmContent;
+        }
+
+        [RelayCommand]
+        private async Task AddEventAsync()
+        {
+            if (SelectedItem == null || !SelectedItem.IsFile) return;
+
+            // 現在の GUI 要素からボタン一覧を抽出
+            var buttonNames = GuiElements?
+                .Where(g => g.Type == GuiElementType.Button && !string.IsNullOrWhiteSpace(g.Name))
+                .Select(g => g.Name.Trim())
+                .Distinct()
+                .ToArray() ?? Array.Empty<string>();
+
+            if (buttonNames.Length == 0)
+            {
+                await Shell.Current.DisplayAlert("情報", "ファイル内にボタン定義が見つかりません。先にボタンを追加してください。", "OK");
+                return;
+            }
+
+            // ボタンを選択させる（キャンセルが選ばれたら戻る）
+            string selectedButton = await Shell.Current.DisplayActionSheet(
+                "イベントを追加するボタンを選んでください",
+                "キャンセル", null,
+                buttonNames
+            );
+
+            if (string.IsNullOrEmpty(selectedButton) || selectedButton == "キャンセル") return;
+
+            // イベント先（遷移先など）を入力
+            string eventName = await Shell.Current.DisplayPromptAsync(
+                "イベント", "イベントの遷移先や名前を入力してください", "OK", "キャンセル", placeholder: "TargetScreen"
+            );
+            if (string.IsNullOrWhiteSpace(eventName)) return;
+
+            string path = SelectedItem.FullPath;
+            string currentMarkdown = File.ReadAllText(path);
+
+            var builder = new UiToMarkdownConverter();
+            string newMarkdown = builder.AddEvent(currentMarkdown, selectedButton.Trim(), eventName.Trim());
             File.WriteAllText(path, newMarkdown);
 
             var converter = new MarkdownToVdmConverter();
