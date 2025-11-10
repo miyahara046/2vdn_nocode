@@ -266,6 +266,107 @@ namespace _2vdm_spec_generator.Services
         }
 
 
+        public string AddTimeoutEvent(string markdown, int timeoutSeconds, string target)
+        {
+            var lines = markdown.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).ToList();
+
+            const string eventHeading = "### イベント一覧";
+
+            // -----------------------------
+            // ❶ ファイル2行目に「～でタイムアウト」を追加 or 上書き
+            // -----------------------------
+            string timeoutLine = $"- {timeoutSeconds}秒でタイムアウト";
+
+            if (lines.Count >= 2)
+            {
+                if (lines[1].Contains("でタイムアウト"))
+                {
+                    // 既存のタイムアウト行を上書き
+                    lines[1] = timeoutLine;
+                }
+                else
+                {
+                    // 2行目に挿入
+                    lines.Insert(1, timeoutLine);
+                }
+            }
+            else if (lines.Count == 1)
+            {
+                // 1行しかない場合は末尾に追加
+                lines.Add(timeoutLine);
+            }
+            else if (lines.Count == 0)
+            {
+                // 空ファイルなら作成
+                lines.Add(string.Empty);
+                lines.Add(timeoutLine);
+            }
+
+            // -----------------------------
+            // ❷ イベント一覧セクションの処理
+            // -----------------------------
+            int eventHeadingIndex = -1;
+            for (int i = 0; i < lines.Count; i++)
+            {
+                if (lines[i].Trim() == eventHeading)
+                {
+                    eventHeadingIndex = i;
+                    break;
+                }
+            }
+
+            int insertionIndex;
+            if (eventHeadingIndex != -1)
+            {
+                // イベント一覧が存在
+                insertionIndex = eventHeadingIndex + 1;
+                while (insertionIndex < lines.Count)
+                {
+                    var t = lines[insertionIndex].Trim();
+                    if (string.IsNullOrEmpty(t) || t.StartsWith("### ") || t.StartsWith("## ") || t.StartsWith("# ")) break;
+                    insertionIndex++;
+                }
+            }
+            else
+            {
+                // イベント一覧がない場合 → 新規追加
+                insertionIndex = lines.Count;
+                lines.Add(string.Empty);
+                lines.Add(eventHeading);
+                insertionIndex = lines.Count;
+            }
+
+            // -----------------------------
+            // ❸ 「タイムアウト → ～」行を上書きまたは追加
+            // -----------------------------
+            int actionLineIndex = -1;
+            for (int i = 0; i < lines.Count; i++)
+            {
+                if (lines[i].Trim().StartsWith("- タイムアウト →"))
+                {
+                    actionLineIndex = i;
+                    break;
+                }
+            }
+
+            string actionLine = $"- タイムアウト → {target}へ";
+
+            if (actionLineIndex != -1)
+            {
+                // 既存行を上書き
+                lines[actionLineIndex] = actionLine;
+            }
+            else
+            {
+                // イベント一覧末尾に追加
+                lines.Insert(insertionIndex, actionLine);
+            }
+
+            return string.Join(Environment.NewLine, lines);
+        }
+
+
+
 
 
     }
