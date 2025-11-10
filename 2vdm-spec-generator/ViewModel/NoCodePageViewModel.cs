@@ -1,6 +1,8 @@
-﻿using CommunityToolkit.Mvvm.ComponentModel;
+﻿using _2vdm_spec_generator.Services;
+using _2vdm_spec_generator.View;
+using CommunityToolkit.Maui.Views;
+using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using _2vdm_spec_generator.Services;
 using Microsoft.Maui.Controls;
 using System;
 using System.Collections.ObjectModel;
@@ -385,7 +387,7 @@ namespace _2vdm_spec_generator.ViewModel
         {
             if (SelectedItem == null || !SelectedItem.IsFile) return;
 
-            // 現在の GUI 要素からボタン一覧を抽出
+            // --- ボタン候補の取得 ---
             var buttonNames = GuiElements?
                 .Where(g => g.Type == GuiElementType.Button && !string.IsNullOrWhiteSpace(g.Name))
                 .Select(g => g.Name.Trim())
@@ -398,7 +400,7 @@ namespace _2vdm_spec_generator.ViewModel
                 return;
             }
 
-            // ボタンを選択させる（キャンセルが選ばれたら戻る）
+            // --- ボタン選択 ---
             string selectedButton = await Shell.Current.DisplayActionSheet(
                 "イベントを追加するボタンを選んでください",
                 "キャンセル", null,
@@ -407,27 +409,66 @@ namespace _2vdm_spec_generator.ViewModel
 
             if (string.IsNullOrEmpty(selectedButton) || selectedButton == "キャンセル") return;
 
-            // イベント先（遷移先など）を入力
-            string eventName = await Shell.Current.DisplayPromptAsync(
-                "イベント", "イベントの遷移先や名前を入力してください", "OK", "キャンセル", placeholder: "TargetScreen"
+            // --- 条件分岐の有無を確認 ---
+            bool isConditional = await Shell.Current.DisplayAlert(
+                "条件分岐イベント",
+                "このイベントに条件分岐を追加しますか？",
+                "はい", "いいえ"
             );
-            if (string.IsNullOrWhiteSpace(eventName)) return;
 
             string path = SelectedItem.FullPath;
             string currentMarkdown = File.ReadAllText(path);
-
             var builder = new UiToMarkdownConverter();
-            string newMarkdown = builder.AddEvent(currentMarkdown, selectedButton.Trim(), eventName.Trim());
-            File.WriteAllText(path, newMarkdown);
+            string newMarkdown;
 
+            if (isConditional)
+            {
+                var branches = new List<(string Condition, string Target)>();
+                bool addMore = true;
+
+                while (addMore)
+                {
+                    // カスタムPopupを呼び出す
+                    var popup = new ConditionInputPopup();
+                    var result = await Shell.Current.CurrentPage.ShowPopupAsync(popup);
+
+                    if (result is not ValueTuple<string, string> values)
+                        break;
+
+                    string condition = values.Item1;
+                    string target = values.Item2;
+
+                    branches.Add((condition, target));
+
+                    addMore = await Shell.Current.DisplayAlert(
+                        "追加", "別の条件分岐を追加しますか？", "はい", "いいえ");
+                }
+
+                if (branches.Count == 0) return;
+
+                newMarkdown = builder.AddConditionalEvent(currentMarkdown, selectedButton.Trim(), branches);
+            }
+            else
+            {
+                // --- 通常のイベント追加 ---
+                string eventName = await Shell.Current.DisplayPromptAsync(
+                    "イベント", "イベントの遷移先や名前を入力してください", "OK", "キャンセル", placeholder: "TargetScreen"
+                );
+                if (string.IsNullOrWhiteSpace(eventName)) return;
+
+                newMarkdown = builder.AddEvent(currentMarkdown, selectedButton.Trim(), eventName.Trim());
+            }
+
+            // --- Markdown と VDM++ 出力更新 ---
+            File.WriteAllText(path, newMarkdown);
             var converter = new MarkdownToVdmConverter();
             string vdmContent = converter.ConvertToVdm(newMarkdown);
             File.WriteAllText(Path.ChangeExtension(path, ".vdmpp"), vdmContent);
 
-            // プロパティを更新して UI に反映させる
             MarkdownContent = newMarkdown;
             VdmContent = vdmContent;
         }
+
 
         // ===== スタートページに戻る =====
 

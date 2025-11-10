@@ -77,12 +77,10 @@ namespace _2vdm_spec_generator.Services
                         insertionIndex = i;
                         break;
                     }
-                    // 次のMarkdown見出し（###, ##, #など）が見つかった場合は、その直前の行に挿入
-                    // ただし、現在の行が見出しでない（Trim()結果が"#"から始まらない）ことを確認
-                    // (Markdownのリストアイテムの後ろに連続する空行がない場合を考慮)
+                    // 次の見出しが見つかった場合は、その直前の行に挿入
                     else if (lines[i].Trim().StartsWith("#") && !lines[i].Trim().StartsWith("-") && !lines[i].Trim().StartsWith("*"))
                     {
-                        // 見出しの直前の行に挿入（既にリストアイテムがある場合は、その次の行になる）
+                        // 見出しの直前の行に挿入
                         insertionIndex = i;
                         break;
                     }
@@ -131,7 +129,7 @@ namespace _2vdm_spec_generator.Services
             return string.Join(Environment.NewLine, lines);
         }
 
-        // 新規: イベント追加（ボタン選択時の処理を想定）
+        //イベント追加（ボタン選択時の処理を想定）
         public string AddEvent(string markdown, string buttonName, string eventTarget)
         {
             string[] newLineSeparators = { Environment.NewLine, "\r\n", "\n", "\r" };
@@ -140,8 +138,8 @@ namespace _2vdm_spec_generator.Services
             const string eventHeading = "### イベント一覧";
             int eventHeadingIndex = -1;
 
-            // 先頭付近にイベント見出しがあるか探す (安全のため最初の 10 行を探索)
-            for (int i = 0; i < Math.Min(lines.Count, 10); i++)
+            // 先頭付近にイベント見出しがあるか探す
+            for (int i = 0; i < lines.Count; i++)
             {
                 if (lines[i].Trim() == eventHeading)
                 {
@@ -190,6 +188,85 @@ namespace _2vdm_spec_generator.Services
 
             return string.Join(Environment.NewLine, lines);
         }
+
+        public string AddConditionalEvent(string markdown, string buttonName, List<(string Condition, string Target)> branches)
+        {
+            if (branches == null) throw new ArgumentNullException(nameof(branches));
+
+            string[] newLineSeparators = { Environment.NewLine, "\r\n", "\n", "\r" };
+            var lines = new List<string>(markdown.Split(newLineSeparators, StringSplitOptions.None));
+
+            const string eventHeading = "### イベント一覧";
+            int eventHeadingIndex = -1;
+
+            // 先頭付近にイベント見出しがあるか探す
+            for (int i = 0; i < lines.Count; i++)
+            {
+                if (lines[i].Trim() == eventHeading)
+                {
+                    eventHeadingIndex = i;
+                    break;
+                }
+            }
+
+            int insertionIndex;
+            if (eventHeadingIndex != -1)
+            {
+                // 見出しがある場合は、そのセクションの末尾を探して挿入
+                insertionIndex = eventHeadingIndex + 1;
+                while (insertionIndex < lines.Count)
+                {
+                    var t = lines[insertionIndex].Trim();
+                    // セクション終端条件：空行または次の見出し
+                    if (string.IsNullOrEmpty(t) || t.StartsWith("### ") || t.StartsWith("## ") || t.StartsWith("# "))
+                        break;
+                    insertionIndex++;
+                }
+            }
+            else
+            {
+                // 見出しがない場合は適切な位置に新規挿入（既存のヘッダーの後など）
+                int insertAfter = -1;
+                for (int i = 0; i < Math.Min(lines.Count, 6); i++)
+                {
+                    var trimmed = lines[i].Trim();
+                    if (trimmed.StartsWith("## ") || trimmed.StartsWith("# "))
+                    {
+                        insertAfter = i;
+                    }
+                }
+
+                insertionIndex = (insertAfter >= 0) ? insertAfter + 1 : lines.Count;
+
+                if (insertionIndex > lines.Count) insertionIndex = lines.Count;
+
+                // 空行と見出しを追加
+                lines.Insert(insertionIndex, string.Empty);
+                insertionIndex++;
+                lines.Insert(insertionIndex, eventHeading);
+                insertionIndex++;
+            }
+            // メイン行（" - {button}押下 →"）
+            lines.Insert(insertionIndex, $"- {buttonName}押下 →");
+            insertionIndex++;
+
+            // 各分岐はスペース + "- " で追加
+            foreach (var (condition, target) in branches)
+            {
+                // 空白や矢印が混ざっている入力に対する簡単な正規化
+                var cond = (condition ?? string.Empty).Trim();
+                var tgt = (target ?? string.Empty).Trim();
+
+                // 例: "表示部に１が入力されている" と "画面Cへ" のように保存
+                lines.Insert(insertionIndex, $"  - {cond} → {tgt}");
+                insertionIndex++;
+            }
+
+            return string.Join(Environment.NewLine, lines);
+        }
+
+
+
 
     }
 }
