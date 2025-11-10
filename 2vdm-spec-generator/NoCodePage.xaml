@@ -3,6 +3,7 @@
              xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              xmlns:vm="clr-namespace:_2vdm_spec_generator.ViewModel"
+             xmlns:converters="clr-namespace:_2vdm_spec_generator.Converters"
              x:Class="_2vdm_spec_generator.NoCodePage"
              x:DataType="vm:NoCodePageViewModel"
              Title="NoCode">
@@ -13,6 +14,7 @@
             <vm:LevelToIndentConverter x:Key="LevelToIndentConverter"/>
             <vm:BoolToExpandCollapseConverter x:Key="BoolToExpandCollapseConverter"/>
             <vm:SelectedToColorConverter x:Key="SelectedToColorConverter"/>
+            <converters:ScreenTypeToVisibilityConverter x:Key="ScreenTypeToVisibilityConverter"/>
         </ResourceDictionary>
     </ContentPage.Resources>
 
@@ -37,6 +39,8 @@
                 <Button Text="フォルダの選択" Command="{Binding SelectFolderCommand}" IsVisible="{Binding IsFolderSelected}" />
                 <Button Text="クラスの種類選択・追加" Command="{Binding AddClassHeadingCommand}" IsVisible="{Binding IsClassAddButtonVisible}"/>
                 <Button Text="画面の追加" Command="{Binding AddScreenListCommand}" IsVisible="{Binding IsScreenListAddButtonVisible}"/>
+                <Button Text="ボタンの追加" Command="{Binding AddBottonCommand}" IsVisible="{Binding IsClassAllButtonVisible}"/>
+                <Button Text="イベントの追加" Command="{Binding AddEventCommand}" IsVisible="{Binding IsClassAllButtonVisible}"/>
             </HorizontalStackLayout>
         </ScrollView>
 
@@ -74,16 +78,27 @@
                     </DataTemplate>
                 </CollectionView.ItemTemplate>
             </CollectionView>
-            
+
         </Border>
 
-        <!-- 中央：Markdown 編集 -->
+        <!-- 中央：GUI表示（ダイアグラム） -->
         <Border Grid.Row="1" Grid.Column="1" Stroke="Gray" StrokeThickness="1" Padding="10" Margin="5">
-            <VerticalStackLayout>
-                <Label Text="Markdown" FontSize="16" FontAttributes="Bold" Margin="0,0,0,5"/>
-                <Editor Text="{Binding MarkdownContent}" AutoSize="TextChanges" VerticalOptions="FillAndExpand"/>
-            </VerticalStackLayout>
+            <Grid RowDefinitions="Auto, * ">
+
+                <Label Text="Condition Transition Map" FontSize="16" FontAttributes="Bold" Margin="0,0,0,5"/>
+
+                <ScrollView Grid.Row="1"  
+             VerticalOptions="FillAndExpand" 
+             HorizontalOptions="FillAndExpand">
+
+                    <ContentView x:Name="DiagramContainer"
+                 BackgroundColor="WhiteSmoke"
+                 VerticalOptions="StartAndExpand"
+                 HorizontalOptions="FillAndExpand"/>
+                </ScrollView>
+            </Grid>
         </Border>
+
 
         <!-- 右側：VDM++ 表示 -->
         <Border Grid.Row="1" Grid.Column="2" Stroke="Gray" StrokeThickness="1" Padding="10" Margin="5">
@@ -94,3 +109,4 @@
         </Border>
     </Grid>
 </ContentPage>
+
