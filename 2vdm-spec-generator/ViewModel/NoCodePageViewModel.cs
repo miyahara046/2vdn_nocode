@@ -469,6 +469,36 @@ namespace _2vdm_spec_generator.ViewModel
             VdmContent = vdmContent;
         }
 
+        [RelayCommand]
+        private async Task AddTimeoutEventAsync()
+        {
+            if (SelectedItem == null || !SelectedItem.IsFile) return;
+
+            var popup = new TimeoutPopup();
+            var result = await Shell.Current.CurrentPage.ShowPopupAsync(popup);
+
+            if (result is not ValueTuple<int, string> timeoutData)
+                return;
+
+            int seconds = timeoutData.Item1;
+            string target = timeoutData.Item2;
+
+            string path = SelectedItem.FullPath;
+            string currentMarkdown = File.ReadAllText(path);
+
+            var builder = new UiToMarkdownConverter();
+            string newMarkdown = builder.AddTimeoutEvent(currentMarkdown, seconds, target);
+            File.WriteAllText(path, newMarkdown);
+
+            var converter = new MarkdownToVdmConverter();
+            string vdmContent = converter.ConvertToVdm(newMarkdown);
+            File.WriteAllText(Path.ChangeExtension(path, ".vdmpp"), vdmContent);
+
+            MarkdownContent = newMarkdown;
+            VdmContent = vdmContent;
+        }
+
+
 
         // ===== スタートページに戻る =====
 

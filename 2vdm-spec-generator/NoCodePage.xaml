@@ -41,6 +41,7 @@
                 <Button Text="画面の追加" Command="{Binding AddScreenListCommand}" IsVisible="{Binding IsScreenListAddButtonVisible}"/>
                 <Button Text="ボタンの追加" Command="{Binding AddBottonCommand}" IsVisible="{Binding IsClassAllButtonVisible}"/>
                 <Button Text="イベントの追加" Command="{Binding AddEventCommand}" IsVisible="{Binding IsClassAllButtonVisible}"/>
+                <Button Text="タイムアウトの追加" Command="{Binding AddTimeoutEventCommand}" IsVisible="{Binding IsClassAllButtonVisible}"/> 
             </HorizontalStackLayout>
         </ScrollView>
 
