@@ -517,23 +517,6 @@ namespace _2vdm_spec_generator.ViewModel
         }
 
     }
-    public enum GuiElementType
-    {
-        Button, //ボタン
-        Event, //イベント
-        Timeout, //タイムアウト
-        Screen, //画面
-        Operation //操作
-    }
-
-    public class GuiElement
-    {
-        public GuiElementType Type { get; set; }   // Button / Event / Timeout / Screen
-        public string Name { get; set; }
-        public string Target { get; set; }
-
-        public string Description { get; set; }
-    }
 
 
 }

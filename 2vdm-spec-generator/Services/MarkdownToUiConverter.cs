@@ -34,7 +34,9 @@ namespace _2vdm_spec_generator.Services
                         {
                             Type = GuiElementType.Screen,
                             Name = name,
-                            Description = ""
+                            Description = "",
+                            X = 300,
+                            Y = 80 + elements.Count * 90
                         });
                     }
                 }
@@ -242,5 +244,6 @@ namespace _2vdm_spec_generator.Services
 
             return elements;
         }
+
     }
 }
