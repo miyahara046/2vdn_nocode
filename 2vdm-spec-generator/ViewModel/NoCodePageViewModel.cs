@@ -516,6 +516,8 @@ namespace _2vdm_spec_generator.ViewModel
             GuiElements = new ObservableCollection<GuiElement>(converter.Convert(value));
         }
 
+
+
     }
 
 

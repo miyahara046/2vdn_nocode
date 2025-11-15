@@ -1,18 +1,22 @@
 ﻿using Microsoft.Maui.Graphics;
 using _2vdm_spec_generator.ViewModel;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace _2vdm_spec_generator.View
 {
     public class GuiDiagramDrawable : IDrawable
     {
         public List<GuiElement> Elements { get; set; } = new();
+        public Action<GuiElement>? NotifyPositionChanged { get; set; }
 
-        private const float nodeW = 160;
-        private const float nodeH = 50;
-        private const float spacing = 80;
-        private const float startX = 50;
-        private const float startY = 5;
+
+        // 外部参照用に public にする
+        public const float NodeWidth = 160f;
+        public const float NodeHeight = 50f;
+        private const float spacing = 80f;
+        private const float startX = 50f;
+        private const float startY = 5f;
 
         public void ArrangeNodes()
         {
@@ -23,7 +27,7 @@ namespace _2vdm_spec_generator.View
             {
                 el.X = startX;
                 el.Y = timeoutY;
-                timeoutY += nodeH + 10;
+                timeoutY += NodeHeight + 10f;
             }
 
             // Screen ノードは左側
@@ -35,7 +39,7 @@ namespace _2vdm_spec_generator.View
                 screenIndex++;
             }
 
-            // Button ノードは左下
+            // Button ノードは左下（screen の下に続ける）
             int buttonIndex = 0;
             foreach (var el in Elements.Where(e => e.Type == GuiElementType.Button))
             {
@@ -44,11 +48,11 @@ namespace _2vdm_spec_generator.View
                 buttonIndex++;
             }
 
-            // Event ノードは右側
+            // Event / Operation は右側
             int eventIndex = 0;
             foreach (var el in Elements.Where(e => e.Type == GuiElementType.Event || e.Type == GuiElementType.Operation))
             {
-                el.X = startX + 300; // 右側
+                el.X = startX + 300f; // 右側オフセット
                 el.Y = timeoutY + eventIndex * spacing;
                 eventIndex++;
             }
@@ -61,7 +65,7 @@ namespace _2vdm_spec_generator.View
 
             if (Elements == null || Elements.Count == 0) return;
 
-            // ノードの位置が未設定なら初期化
+            // 初期配置が未設定なら配置
             if (!Elements.Any(e => e.X != 0 || e.Y != 0))
                 ArrangeNodes();
 
@@ -72,13 +76,13 @@ namespace _2vdm_spec_generator.View
             canvas.StrokeSize = 2;
             foreach (var el in Elements)
             {
-                if (!string.IsNullOrEmpty(el.Target) && positions.ContainsKey(el.Target))
+                if (!string.IsNullOrEmpty(el.Target) && positions.ContainsKey(el.Target) && positions.ContainsKey(el.Name))
                 {
                     var f = positions[el.Name];
                     var t = positions[el.Target];
 
-                    var s = new PointF(f.X + nodeW, f.Y + nodeH / 2);
-                    var eP = new PointF(t.X, t.Y + nodeH / 2);
+                    var s = new PointF(f.X + NodeWidth, f.Y + NodeHeight / 2f);
+                    var eP = new PointF(t.X, t.Y + NodeHeight / 2f);
 
                     canvas.DrawLine(s, eP);
                     DrawArrow(canvas, s, eP);
@@ -88,10 +92,7 @@ namespace _2vdm_spec_generator.View
             // ノード描画
             foreach (var el in Elements)
             {
-                var p = positions[el.Name];
-                // ノード描画
-                var r = new RectF(el.X, el.Y, nodeW, nodeH);
-
+                var r = new RectF(el.X, el.Y, NodeWidth, NodeHeight);
 
                 canvas.FillColor = el.Type switch
                 {
@@ -119,10 +120,10 @@ namespace _2vdm_spec_generator.View
                     case GuiElementType.Operation:
                         using (var path = new PathF())
                         {
-                            path.MoveTo(r.X + r.Width / 2, r.Y);
-                            path.LineTo(r.Right, r.Y + r.Height / 2);
-                            path.LineTo(r.X + r.Width / 2, r.Bottom);
-                            path.LineTo(r.X, r.Y + r.Height / 2);
+                            path.MoveTo(r.X + r.Width / 2f, r.Y);
+                            path.LineTo(r.Right, r.Y + r.Height / 2f);
+                            path.LineTo(r.X + r.Width / 2f, r.Bottom);
+                            path.LineTo(r.X, r.Y + r.Height / 2f);
                             path.Close();
                             canvas.FillPath(path);
                             canvas.DrawPath(path);
