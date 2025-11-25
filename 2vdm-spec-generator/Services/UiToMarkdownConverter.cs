@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using _2vdm_spec_generator.ViewModel;
 
 namespace _2vdm_spec_generator.Services
 {
@@ -366,8 +367,198 @@ namespace _2vdm_spec_generator.Services
         }
 
 
+        public static void UpdateMarkdownOrder(string markdownFilePath, IEnumerable<GuiElement> elements)
+        {
+            if (string.IsNullOrWhiteSpace(markdownFilePath) || !File.Exists(markdownFilePath)) return;
+            if (elements == null) return;
 
+            var lines = File.ReadAllLines(markdownFilePath).ToList();
 
+            // 1) 有効ボタン一覧を抽出して書き換える
+            lines = ReplaceListSection(lines, "### 有効ボタン一覧", BuildButtonList(elements));
 
+            // 2) イベント一覧を抽出して書き換える（イベントブロック単位で並べ替え）
+            lines = ReplaceEventSection(lines, "### イベント一覧", BuildEventBlockOrder(elements));
+
+            // 上書き保存
+            File.WriteAllLines(markdownFilePath, lines, Encoding.UTF8);
+        }
+
+        // 有効ボタン一覧用：elements から Button の名前を Y 順で取り出す（Name が null でなければ）
+        private static List<string> BuildButtonList(IEnumerable<GuiElement> elements)
+        {
+            return elements
+                .Where(e => e.Type == GuiElementType.Button && !string.IsNullOrWhiteSpace(e.Name))
+                .OrderBy(e => e.Y)
+                .Select(e => e.Name.Trim())
+                .ToList();
+        }
+
+        // イベント一覧用：elements から Event の“キー”（比較に使うテキスト）を取得
+        // ここでは GuiElement.Name を使用してマッチを試みる。
+        private static List<string> BuildEventBlockOrder(IEnumerable<GuiElement> elements)
+        {
+            return elements
+                .Where(e => e.Type == GuiElementType.Event && !string.IsNullOrWhiteSpace(e.Name))
+                .OrderBy(e => e.Y)
+                .Select(e => e.Name.Trim())
+                .ToList();
+        }
+
+        // 指定見出しセクション（単純なトップレベルの - item リスト）を置き換える
+        private static List<string> ReplaceListSection(List<string> lines, string heading, List<string> newItems)
+        {
+            if (newItems == null || newItems.Count == 0) return lines;
+
+            int idx = lines.FindIndex(l => l.Trim() == heading);
+            if (idx == -1) return lines;
+
+            int insertion = idx + 1;
+            // セクション終端を探す：空行または次の見出し（#）が来るまで
+            int end = insertion;
+            while (end < lines.Count)
+            {
+                var t = lines[end];
+                if (string.IsNullOrWhiteSpace(t)) { end++; break; }
+                if (t.TrimStart().StartsWith("### ") || t.TrimStart().StartsWith("## ") || t.TrimStart().StartsWith("# ")) break;
+                end++;
+            }
+
+            // 新しいセクションに置換：heading と newItems と 1つ空行を残す
+            var newSection = new List<string> { heading };
+            foreach (var it in newItems)
+                newSection.Add($"- {it}");
+            newSection.Add(string.Empty);
+
+            // 実際の置換
+            var result = new List<string>();
+            result.AddRange(lines.Take(idx));
+            result.AddRange(newSection);
+            result.AddRange(lines.Skip(end));
+            return result;
+        }
+
+        // イベントセクションは「ブロック」単位（トップレベルの "- " とそれに続くインデント付き行群）で扱う。
+        // blocksOrder は GuiElement.Name のリスト（Y順）で、それをベースにブロックを並べ替える。
+        private static List<string> ReplaceEventSection(List<string> lines, string heading, List<string> blocksOrder)
+        {
+            int idx = lines.FindIndex(l => l.Trim() == heading);
+            if (idx == -1) return lines;
+
+            int cursor = idx + 1;
+            // Collect blocks
+            var blocks = new List<(string key, List<string> textLines)>();
+            while (cursor < lines.Count)
+            {
+                var line = lines[cursor];
+                if (string.IsNullOrWhiteSpace(line))
+                {
+                    cursor++;
+                    // stop at first blank followed by heading or end? We'll treat blank as separator but continue
+                    // We'll break if next non-empty is another heading
+                    int look = cursor;
+                    while (look < lines.Count && string.IsNullOrWhiteSpace(lines[look])) look++;
+                    if (look < lines.Count && (lines[look].TrimStart().StartsWith("### ") || lines[look].TrimStart().StartsWith("## ") || lines[look].TrimStart().StartsWith("# ")))
+                        break;
+                    continue;
+                }
+                if (line.TrimStart().StartsWith("### ") || line.TrimStart().StartsWith("## ") || line.TrimStart().StartsWith("# "))
+                {
+                    break;
+                }
+
+                // Expect top-level block starts with "- "
+                if (line.TrimStart().StartsWith("- "))
+                {
+                    var block = new List<string> { line };
+                    int next = cursor + 1;
+                    // collect indented or nested lines (starting with two or more spaces) as part of the block
+                    while (next < lines.Count && (lines[next].StartsWith("  ") || lines[next].StartsWith("\t") || string.IsNullOrWhiteSpace(lines[next])))
+                    {
+                        // stop if next is a top-level new "- " with same indent (no leading spaces)
+                        if (!string.IsNullOrWhiteSpace(lines[next]) && lines[next].TrimStart().StartsWith("- ") && !lines[next].StartsWith("  "))
+                            break;
+
+                        block.Add(lines[next]);
+                        next++;
+                    }
+
+                    // Determine a key for this block for matching: try to extract meaningful token from first line
+                    var first = block.First().Trim();
+                    // Remove leading "- " and trim
+                    var keyCandidate = first.StartsWith("- ") ? first.Substring(2).Trim() : first;
+                    // For matching, use whole first line text as keyCandidate (matching is fuzzy)
+                    blocks.Add((keyCandidate, block));
+                    cursor = next;
+                }
+                else
+                {
+                    // Unexpected line inside events section — treat as consumed
+                    cursor++;
+                }
+            }
+
+            // If no blocks found, nothing to do
+            if (!blocks.Any()) return lines;
+
+            // Build reorder mapping: blocksOrder contains element names in desired order.
+            // We'll try to match each desired name to a block whose first line contains that name.
+            var orderedBlocks = new List<List<string>>();
+            var used = new bool[blocks.Count];
+
+            // First, match by contains (exact substring) in order of blocksOrder
+            foreach (var desired in blocksOrder)
+            {
+                bool matched = false;
+                for (int i = 0; i < blocks.Count; i++)
+                {
+                    if (used[i]) continue;
+                    var key = blocks[i].key;
+                    if (!string.IsNullOrEmpty(key) && key.Contains(desired, StringComparison.Ordinal))
+                    {
+                        orderedBlocks.Add(blocks[i].textLines);
+                        used[i] = true;
+                        matched = true;
+                        break;
+                    }
+                }
+                // if not matched, continue — we will append unmatched blocks later
+            }
+
+            // Append any remaining unmatched blocks in original order
+            for (int i = 0; i < blocks.Count; i++)
+            {
+                if (!used[i])
+                    orderedBlocks.Add(blocks[i].textLines);
+            }
+
+            // Now rebuild the final lines:
+            // Keep everything before heading, then heading, then flattened ordered blocks, then remainder after the original event section
+            // Determine where the original event section ended (cursor where we stopped collecting)
+            int endOfSectionCursor = cursor;
+            // If we broke because of heading, cursor currently points at that heading or beyond.
+
+            var result = new List<string>();
+            result.AddRange(lines.Take(idx)); // before heading
+            result.Add(lines[idx]); // the heading itself
+
+            // Add ordered blocks
+            foreach (var blockLines in orderedBlocks)
+            {
+                foreach (var bl in blockLines)
+                    result.Add(bl);
+            }
+
+            // Add a blank line after section (to separate from next heading), only if original had one
+            result.Add(string.Empty);
+
+            // Append the rest after endOfSectionCursor
+            if (endOfSectionCursor < lines.Count)
+                result.AddRange(lines.Skip(endOfSectionCursor));
+
+            return result;
+        }
     }
+
+
 }

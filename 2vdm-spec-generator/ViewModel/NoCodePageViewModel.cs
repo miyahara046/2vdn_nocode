@@ -9,6 +9,8 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace _2vdm_spec_generator.ViewModel
 {
@@ -514,11 +516,84 @@ namespace _2vdm_spec_generator.ViewModel
             // Markdownが変更されたらGUI要素を更新
             var converter = new MarkdownToUiConverter();
             GuiElements = new ObservableCollection<GuiElement>(converter.Convert(value));
+
+            // タイムアウトは固定フラグ
+            foreach (var el in GuiElements.Where(g => g.Type == GuiElementType.Timeout))
+                el.IsFixed = true;
+
+            // 位置保存ファイルがあれば読み込んで反映
+            LoadGuiPositionsToElements();
         }
 
+        // 保存 (SelectedItem がセットされている前提)
+        public void SaveGuiPositions(IEnumerable<GuiElement> elements)
+        {
+            try
+            {
+                if (SelectedItem == null || string.IsNullOrWhiteSpace(SelectedItem.FullPath)) return;
 
+                var list = elements.Select(e => new GuiElementPosition
+                {
+                    Name = e.Name,
+                    X = e.X,
+                    Y = e.Y
+                }).ToList();
 
+                var options = new JsonSerializerOptions { WriteIndented = true };
+                var json = JsonSerializer.Serialize(list, options);
+
+                var posPath = Path.ChangeExtension(SelectedItem.FullPath, ".positions.json");
+                File.WriteAllText(posPath, json);
+                LoadMarkdownAndVdm(SelectedItem.FullPath);
+            }
+            catch
+            {
+                // 保存失敗は UI に響かないように黙殺（必要ならログに出す）
+            }
+        }
+
+        // 読み込み（ファイルから位置を復元して GuiElements に適用）
+        private void LoadGuiPositionsToElements()
+        {
+            if (SelectedItem == null || string.IsNullOrWhiteSpace(SelectedItem.FullPath)) return;
+
+            var posPath = Path.ChangeExtension(SelectedItem.FullPath, ".positions.json");
+            if (!File.Exists(posPath)) return;
+
+            try
+            {
+                var json = File.ReadAllText(posPath);
+                var list = JsonSerializer.Deserialize<List<GuiElementPosition>>(json);
+                if (list == null || GuiElements == null) return;
+
+                // マッチするノード名に位置を適用
+                foreach (var pos in list)
+                {
+                    var node = GuiElements.FirstOrDefault(g => g.Name == pos.Name);
+                    if (node != null)
+                    {
+                        node.X = pos.X;
+                        node.Y = pos.Y;
+                    }
+                }
+            }
+            catch
+            {
+                // 読み込み失敗は無視
+            }
+        }
+
+        // GuiElementPosition 用 DTO
+        private class GuiElementPosition
+        {
+            public string Name { get; set; }
+            public float X { get; set; }
+            public float Y { get; set; }
+        }
+
+        // OnMarkdownContentChanged の最後に LoadGuiPositionsToElements を呼ぶようにしてください
+       
     }
 
-
 }
+

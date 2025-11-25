@@ -5,73 +5,109 @@ using System.Linq;
 
 namespace _2vdm_spec_generator.View
 {
+    /// <summary>
+    /// ノードの描画処理（色・形・位置）。配置ロジックの一部（初期配置）もここに置いてあります。
+    /// </summary>
     public class GuiDiagramDrawable : IDrawable
     {
         public List<GuiElement> Elements { get; set; } = new();
-        public Action<GuiElement>? NotifyPositionChanged { get; set; }
 
-
-        // 外部参照用に public にする
+        // 他所から参照する定数
         public const float NodeWidth = 160f;
         public const float NodeHeight = 50f;
-        private const float spacing = 80f;
-        private const float startX = 50f;
-        private const float startY = 5f;
 
+        // レイアウト定数（必要に応じて調整）
+        private const float spacing = 80f;
+        private const float leftColumnX = 40f;    // Screen / Button / Operation の固定 X
+        private const float rightColumnX = 350f;  // Event の固定 X
+        private const float timeoutStartX = 40f;  // Timeout 固定 X
+        private const float timeoutStartY = 8f;   // Timeout の開始 Y
+
+        /// <summary>
+        /// 初期配置／既定位置が無いノードに対して初期位置を割り当てます。
+        /// ※ 位置が 0,0 のノードを未配置とみなす仕様です（既に位置がある場合は上書きしません）。 
+        /// </summary>
         public void ArrangeNodes()
         {
-            float timeoutY = startY;
+            float timeoutY = timeoutStartY;
 
-            // タイムアウトは上部固定
+            // 1) タイムアウトは上部に固定（上から縦に積む）
             foreach (var el in Elements.Where(e => e.Type == GuiElementType.Timeout))
             {
-                el.X = startX;
+                el.IsFixed = true;
+                el.X = timeoutStartX;
                 el.Y = timeoutY;
                 timeoutY += NodeHeight + 10f;
             }
 
-            // Screen ノードは左側
+            // 2) Screen は左側（左列に縦配置）
             int screenIndex = 0;
             foreach (var el in Elements.Where(e => e.Type == GuiElementType.Screen))
             {
-                el.X = startX;
-                el.Y = timeoutY + screenIndex * spacing;
+                if (IsUnpositioned(el))
+                {
+                    el.X = leftColumnX;
+                    el.Y = timeoutY + screenIndex * spacing;
+                }
                 screenIndex++;
             }
 
-            // Button ノードは左下（screen の下に続ける）
+            // 3) Button は左列の下に続ける
             int buttonIndex = 0;
             foreach (var el in Elements.Where(e => e.Type == GuiElementType.Button))
             {
-                el.X = startX;
-                el.Y = timeoutY + screenIndex * spacing + buttonIndex * spacing;
+                if (IsUnpositioned(el))
+                {
+                    el.X = leftColumnX;
+                    el.Y = timeoutY + screenIndex * spacing + buttonIndex * spacing;
+                }
                 buttonIndex++;
             }
 
-            // Event / Operation は右側
-            int eventIndex = 0;
-            foreach (var el in Elements.Where(e => e.Type == GuiElementType.Event || e.Type == GuiElementType.Operation))
+            // 4) Operation も左側（必要ならボタンと同列）
+            int opIndex = 0;
+            foreach (var el in Elements.Where(e => e.Type == GuiElementType.Operation))
             {
-                el.X = startX + 300f; // 右側オフセット
-                el.Y = timeoutY + eventIndex * spacing;
+                if (IsUnpositioned(el))
+                {
+                    el.X = leftColumnX;
+                    el.Y = timeoutY + screenIndex * spacing + (buttonIndex + opIndex) * spacing;
+                }
+                opIndex++;
+            }
+
+            // 5) Event は右側
+            int eventIndex = 0;
+            foreach (var el in Elements.Where(e => e.Type == GuiElementType.Event))
+            {
+                if (IsUnpositioned(el))
+                {
+                    el.X = rightColumnX;
+                    el.Y = timeoutY + eventIndex * spacing;
+                }
                 eventIndex++;
             }
         }
 
+        private static bool IsUnpositioned(GuiElement e) => e.X == 0 && e.Y == 0;
+
         public void Draw(ICanvas canvas, RectF dirtyRect)
         {
+            // 背景
             canvas.FillColor = Colors.White;
             canvas.FillRectangle(dirtyRect);
 
             if (Elements == null || Elements.Count == 0) return;
 
-            // 初期配置が未設定なら配置
+            // 初回配置（全部が (0,0) なら ArrangeNodes を実行）
             if (!Elements.Any(e => e.X != 0 || e.Y != 0))
                 ArrangeNodes();
 
-            var positions = Elements.ToDictionary(e => e.Name, e => new PointF(e.X, e.Y));
+            // 名前をキーに位置辞書（接続線描画に使う）
+            var positions = Elements.Where(e => !string.IsNullOrWhiteSpace(e.Name))
+                                    .ToDictionary(e => e.Name, e => new PointF(e.X, e.Y));
 
-            // 接続線
+            // 接続線（矢印付き）
             canvas.StrokeColor = Colors.Gray;
             canvas.StrokeSize = 2;
             foreach (var el in Elements)
@@ -112,10 +148,12 @@ namespace _2vdm_spec_generator.View
                         canvas.FillRoundedRectangle(r, 8);
                         canvas.DrawRoundedRectangle(r, 8);
                         break;
+
                     case GuiElementType.Button:
                         canvas.FillEllipse(r);
                         canvas.DrawEllipse(r);
                         break;
+
                     case GuiElementType.Event:
                     case GuiElementType.Operation:
                         using (var path = new PathF())
@@ -129,19 +167,32 @@ namespace _2vdm_spec_generator.View
                             canvas.DrawPath(path);
                         }
                         break;
+
                     case GuiElementType.Timeout:
                         canvas.FillRectangle(r);
                         canvas.DrawRectangle(r);
                         break;
+
                     default:
                         canvas.FillRoundedRectangle(r, 8);
                         canvas.DrawRoundedRectangle(r, 8);
                         break;
                 }
 
+                // 選択中は枠を強調（アウトライン用に拡大した角丸を描く）
+                if (el.IsSelected)
+                {
+                    canvas.StrokeColor = Colors.Orange;
+                    canvas.StrokeSize = 3;
+                    canvas.DrawRoundedRectangle(r.Expand(4), 8);
+                    canvas.StrokeSize = 2;
+                    canvas.StrokeColor = Colors.Black;
+                }
+
+                // テキスト
                 canvas.FontColor = Colors.Black;
                 canvas.FontSize = 14;
-                canvas.DrawString(el.Name, r, HorizontalAlignment.Center, VerticalAlignment.Center);
+                canvas.DrawString(el.Name ?? "", r, HorizontalAlignment.Center, VerticalAlignment.Center);
             }
         }
 
@@ -155,6 +206,19 @@ namespace _2vdm_spec_generator.View
             var p2 = new PointF(end.X - size * MathF.Cos(angle + 0.3f), end.Y - size * MathF.Sin(angle + 0.3f));
             canvas.DrawLine(end, p1);
             canvas.DrawLine(end, p2);
+        }
+    }
+
+    public static class RectFExtensions
+    {
+        public static RectF Expand(this RectF rect, float margin)
+        {
+            return new RectF(
+                rect.Left - margin,
+                rect.Top - margin,
+                rect.Width + margin * 2,
+                rect.Height + margin * 2
+            );
         }
     }
 }

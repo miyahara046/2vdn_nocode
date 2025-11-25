@@ -1,8 +1,8 @@
 ﻿using Microsoft.Maui.Controls;
 using Microsoft.Maui.Graphics;
 using System;
-using System.Collections.Generic;
 using System.Linq;
+using System.Collections.Generic;
 using _2vdm_spec_generator.ViewModel;
 
 #if WINDOWS
@@ -12,33 +12,58 @@ using Microsoft.UI.Xaml.Input;
 
 namespace _2vdm_spec_generator.View
 {
+    /// <summary>
+    /// GraphicsView を ScrollView に入れ、ポインタ/パンイベントでノードドラッグ（Yのみ）を実現。
+    /// Windows はネイティブ Pointer、非Windows は PanGesture を使用。
+    /// </summary>
     public class GuiDiagramRenderer : ContentView
     {
         private readonly GraphicsView _graphicsView;
         private readonly GuiDiagramDrawable _drawable;
+        private readonly ScrollView _scrollView;
 
         private GuiElement _draggedNode = null;
         private PointF _dragOffset;
-        private const float GridSize = 20f;
-        private const float NodeWidth = GuiDiagramDrawable.NodeWidth;
-        private const float NodeHeight = GuiDiagramDrawable.NodeHeight;
+
+        // スナップグリッド（Y方向）
+        private const float SnapSize = 40f;
+
+        // 左右固定X
+        private const float LeftColumnX = 40f;
+        private const float RightColumnX = 350f;
+
+        // 外部に最終座標を渡すためのコールバック
+        public Action<IEnumerable<GuiElement>> PositionsChanged { get; set; }
 
         public GuiDiagramRenderer()
         {
             _drawable = new GuiDiagramDrawable();
+
             _graphicsView = new GraphicsView
             {
                 Drawable = _drawable,
-                BackgroundColor = Colors.Transparent
+                BackgroundColor = Colors.White,
+                InputTransparent = false
             };
 
-            Content = _graphicsView;
+            // ScrollView でラップしてスクロール可能にする（両方向）
+            _scrollView = new ScrollView
+            {
+                Orientation = ScrollOrientation.Both,
+                Content = _graphicsView,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Always,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Always
+            };
 
+            Content = _scrollView;
+
+            // HandlerChanged でプラットフォーム固有イベントをつける
             _graphicsView.HandlerChanged += GraphicsView_HandlerChanged;
 
 #if !WINDOWS
+            // 非WindowsはPanGestureでドラッグ（スクロールとの衝突がある場合は調整が必要）
             var pan = new PanGestureRecognizer();
-            pan.PanUpdated += Pan_PanUpdated;
+            pan.PanUpdated += NonWindows_PanUpdated;
             _graphicsView.GestureRecognizers.Add(pan);
 #endif
         }
@@ -46,6 +71,7 @@ namespace _2vdm_spec_generator.View
         private void GraphicsView_HandlerChanged(object sender, EventArgs e)
         {
 #if WINDOWS
+            // 既存の登録解除（安全対策）
             if (_graphicsView.Handler?.PlatformView is UIElement oldEl)
             {
                 oldEl.PointerPressed -= Platform_PointerPressed;
@@ -53,6 +79,7 @@ namespace _2vdm_spec_generator.View
                 oldEl.PointerReleased -= Platform_PointerReleased;
             }
 
+            // 新しく登録
             if (_graphicsView.Handler?.PlatformView is UIElement el)
             {
                 el.PointerPressed += Platform_PointerPressed;
@@ -62,31 +89,68 @@ namespace _2vdm_spec_generator.View
 #endif
         }
 
+#if WINDOWS
+        private void Platform_PointerPressed(object sender, PointerRoutedEventArgs e)
+        {
+            if (!(sender is UIElement ui)) return;
+            var pt = e.GetCurrentPoint(ui).Position;
+            // Convert pointer position to GraphicsView logical coords:
+            // UIElement is the platform view that hosts GraphicsView; coordinates are suitable to use.
+            TryStartDrag((float)pt.X, (float)pt.Y);
+            // Optional: Capture pointer if desired (omitted - MAUI will handle)
+        }
+
+        private void Platform_PointerMoved(object sender, PointerRoutedEventArgs e)
+        {
+            if (_draggedNode == null) return;
+            if (!(sender is UIElement ui)) return;
+            var pt = e.GetCurrentPoint(ui).Position;
+            ContinueDrag((float)pt.X, (float)pt.Y);
+        }
+
+        private void Platform_PointerReleased(object sender, PointerRoutedEventArgs e)
+        {
+            if (_draggedNode != null)
+            {
+                FinishDrag(_draggedNode);
+            }
+        }
+#endif
+
 #if !WINDOWS
-        // 簡易フォールバック（実機で微調整が必要）
+        // 非WindowsのPanハンドラ（シンプル実装）
         private PointF? _panStartOriginalPos = null;
         private GuiElement _panTarget = null;
-        private void Pan_PanUpdated(object sender, PanUpdatedEventArgs e)
+
+        private void NonWindows_PanUpdated(object sender, PanUpdatedEventArgs e)
         {
             switch (e.StatusType)
             {
                 case GestureStatus.Started:
-                    _panTarget = _drawable.Elements
-                        .Where(el => el.Type != GuiElementType.Timeout && el.Type != GuiElementType.Event)
-                        .FirstOrDefault();
+                    // Find nearest draggable node based on the current viewport center + pointer (approx)
+                    // Using simple heuristic: find first movable element under vertical offset
+                    _panTarget = _drawable.Elements.Where(CanDrag).OrderBy(el => Math.Abs(el.Y)).FirstOrDefault();
                     if (_panTarget != null)
                         _panStartOriginalPos = new PointF(_panTarget.X, _panTarget.Y);
                     break;
+
                 case GestureStatus.Running:
                     if (_panTarget != null && _panStartOriginalPos.HasValue)
                     {
-                        _panTarget.X = _panStartOriginalPos.Value.X + (float)e.TotalX;
-                        _panTarget.Y = _panStartOriginalPos.Value.Y + (float)e.TotalY;
+                        // Move only Y (preserve X per type)
+                        var newY = _panStartOriginalPos.Value.Y + (float)e.TotalY;
+                        _panTarget.Y = newY;
+                        ApplyFixedX(_panTarget);
                         _graphicsView.Invalidate();
                     }
                     break;
+
                 case GestureStatus.Completed:
                 case GestureStatus.Canceled:
+                    if (_panTarget != null)
+                    {
+                        FinishDrag(_panTarget);
+                    }
                     _panTarget = null;
                     _panStartOriginalPos = null;
                     break;
@@ -94,39 +158,21 @@ namespace _2vdm_spec_generator.View
         }
 #endif
 
-#if WINDOWS
-        private void Platform_PointerPressed(object sender, PointerRoutedEventArgs e)
-        {
-            if (!(sender is UIElement uiElement)) return;
-            var pt = e.GetCurrentPoint(uiElement).Position;
-            TryStartDrag((float)pt.X, (float)pt.Y);
-        }
+        // 判定：ドラッグ可能か（Timeout は不可）
+        private bool CanDrag(GuiElement el) => el != null && el.Type != GuiElementType.Timeout;
 
-        private void Platform_PointerMoved(object sender, PointerRoutedEventArgs e)
-        {
-            if (_draggedNode == null) return;
-            if (!(sender is UIElement uiElement)) return;
-            var pt = e.GetCurrentPoint(uiElement).Position;
-            ContinueDrag((float)pt.X, (float)pt.Y);
-        }
-
-        private void Platform_PointerReleased(object sender, PointerRoutedEventArgs e)
-        {
-            EndDrag();
-        }
-#endif
-
+        // Try to start drag: iterate reverse order so that topmost elements are hit first
         private void TryStartDrag(float pointerX, float pointerY)
         {
-            // 上にあるノード優先で逆順検索
             foreach (var el in _drawable.Elements.AsEnumerable().Reverse())
             {
+                if (!CanDrag(el)) continue;
+
                 var rect = new RectF(el.X, el.Y, GuiDiagramDrawable.NodeWidth, GuiDiagramDrawable.NodeHeight);
                 if (rect.Contains(pointerX, pointerY))
                 {
                     _draggedNode = el;
                     _dragOffset = new PointF(pointerX - el.X, pointerY - el.Y);
-
                     el.IsSelected = true;
                     _graphicsView.Invalidate();
                     break;
@@ -134,100 +180,119 @@ namespace _2vdm_spec_generator.View
             }
         }
 
-
+        // Continue drag: update only Y, then force X according to type
         private void ContinueDrag(float pointerX, float pointerY)
         {
             if (_draggedNode == null) return;
 
-            _draggedNode.X = pointerX - _dragOffset.X;
-            _draggedNode.Y = pointerY - _dragOffset.Y;
+            float newY = pointerY - _dragOffset.Y;
+            _draggedNode.Y = newY;
+            ApplyFixedX(_draggedNode);
 
-            ResolveCollisions(_draggedNode);
-
+            // Live redraw
             _graphicsView.Invalidate();
         }
 
 
-        private void EndDrag()
+        // Finish drag: snap, reflow ordering, notify
+        private void FinishDrag(GuiElement finishedNode)
         {
-            if (_draggedNode != null)
+            if (finishedNode == null) return;
+
+            // Snap to grid
+            finishedNode.Y = Snap(finishedNode.Y, SnapSize);
+
+            // Re-apply fixed X
+            ApplyFixedX(finishedNode);
+
+            // Reflow ordering to remove overlaps and make nice ordering
+            ReflowVerticalOrdering();
+
+            // Deselect
+            finishedNode.IsSelected = false;
+
+            // Notify external (ViewModel can persist)
+            PositionsChanged?.Invoke(_drawable.Elements);
+
+            // Redraw
+            _graphicsView.Invalidate();
+
+            _draggedNode = null;
+        }
+
+        private void ApplyFixedX(GuiElement el)
+        {
+            if (el == null) return;
+
+            switch (el.Type)
             {
-                // スナップ処理
-                _draggedNode.X = Snap(_draggedNode.X, GridSize);
-                _draggedNode.Y = Snap(_draggedNode.Y, GridSize);
-
-                _draggedNode.IsSelected = false;
-                _draggedNode = null;
-
-                _graphics_view_invalidate_safe();
+                case GuiElementType.Screen:
+                case GuiElementType.Button:
+                case GuiElementType.Operation:
+                    el.X = LeftColumnX;
+                    break;
+                case GuiElementType.Event:
+                    el.X = RightColumnX;
+                    break;
+                case GuiElementType.Timeout:
+                    el.IsFixed = true;
+                    el.X = LeftColumnX;
+                    break;
             }
         }
 
-        private float Snap(float value, float grid)
+        // Reflow: timeout on top, then others sorted by Y, spaced by SnapSize
+        private void ReflowVerticalOrdering()
         {
-            return (float)(Math.Round(value / grid) * grid);
+            var timeouts = _drawable.Elements.Where(e => e.Type == GuiElementType.Timeout).OrderBy(e => e.Y).ToList();
+            var movable = _drawable.Elements.Where(e => e.Type != GuiElementType.Timeout).OrderBy(e => e.Y).ToList();
+
+            float baseY = 8f;
+            if (timeouts.Any())
+            {
+                var lastT = timeouts.Last();
+                baseY = lastT.Y + GuiDiagramDrawable.NodeHeight + 8f;
+            }
+
+            float y = baseY;
+            foreach (var el in movable)
+            {
+                el.Y = y;
+                ApplyFixedX(el);
+                y += SnapSize;
+            }
+
+            _graphicsView.Invalidate();
         }
 
-        // 安全に Invalidate を呼ぶヘルパー（nullチェック）
-        private void _graphics_view_invalidate_safe()
-        {
-            _graphicsView?.Invalidate();
-        }
+        private static float Snap(float value, float grid) => (float)(Math.Round(value / grid) * grid);
 
-        // ここに Distance ヘルパーを実装（もし距離判定が必要なら使える）
-        private static float Distance(float x1, float y1, float x2, float y2)
-            => MathF.Sqrt((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2));
-
-        // Render API
+        // public Render API
         public void Render(IEnumerable<GuiElement> elements)
         {
             var list = elements?.ToList() ?? new();
             _drawable.Elements = list;
 
-            // Arrange 初期化（タイムアウト/イベントの初期配置）
+            // arrange nodes if unpositioned
             _drawable.ArrangeNodes();
 
-            // Canvas 高さ調整（空コレクション対応）
-            float maxY = _drawable.Elements.Select(e => e.Y + GuiDiagramDrawable.NodeHeight).DefaultIfEmpty(0).Max();
-            float height = Math.Max(maxY + 50f, 100f);
+            // compute content size and set GraphicsView size accordingly so ScrollView can scroll
+            float maxY = 0f;
+            if (_drawable.Elements.Any())
+                maxY = _drawable.Elements.Max(e => e.Y + GuiDiagramDrawable.NodeHeight);
+
+            var height = Math.Max(maxY + 120f, 300f);
+            var width = 1000f; // sufficiently wide; adjust as needed
 
             _graphicsView.HeightRequest = height;
-            this.HeightRequest = height;
+            _graphicsView.WidthRequest = width;
+            this.HeightRequest = Math.Min(height, 800); // allow the page to determine visible area; adjust if needed
+
             InvalidateMeasure();
             _graphicsView.Invalidate();
         }
 
-        private bool IsOverlapping(GuiElement a, GuiElement b)
-        {
-            return !(a.X + NodeWidth < b.X ||
-                     b.X + NodeWidth < a.X ||
-                     a.Y + NodeHeight < b.Y ||
-                     b.Y + NodeHeight < a.Y);
-        }
-
-        private void ResolveCollisions(GuiElement target)
-{
-    foreach (var other in _drawable.Elements)
-    {
-        if (other == target) continue;
-
-        if (IsOverlapping(target, other))
-        {
-            // “押し返す距離” を計算
-            float dx = (target.X - other.X);
-            float dy = (target.Y - other.Y);
-
-            if (Math.Abs(dx) < 1) dx = 1;
-            if (Math.Abs(dy) < 1) dy = 1;
-
-            target.X += dx * 0.3f;
-            target.Y += dy * 0.3f;
-        }
-    }
-}
-
-
-
-
+        // Public API to programmatically finish any current drag
+        public void FinishCurrentDrag() => FinishDrag(_draggedNode);
     }
 }

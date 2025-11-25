@@ -11,7 +11,79 @@ namespace _2vdm_spec_generator.Services
         
         private static readonly Regex EventPattern = new Regex(@"^(?<Name>.*?)\s*→\s*(?<Target>.*)$", RegexOptions.Compiled); 
         
-        private static readonly Regex OperationPattern = new Regex(@"^(?<Operation>.*?)(?<Trigger>押下|で)\s*→\s*(?<Target>.*)$", RegexOptions.Compiled); 
+        private static readonly Regex OperationPattern = new Regex(@"^(?<Operation>.*?)(?<Trigger>押下|で)\s*→\s*(?<Target>.*)$", RegexOptions.Compiled);
+
+        private void ArrangeElements(List<GuiElement> elements)
+        {
+            float startX = 200;
+            float startY = 80;
+            float paddingY = 80;
+            float paddingX = 250;
+
+            // ==== Screen ====
+            float currentY = startY;
+            foreach (var screen in elements.Where(e => e.Type == GuiElementType.Screen))
+            {
+                screen.X = startX;
+                screen.Y = currentY;
+                currentY += screen.Height + paddingY;
+            }
+
+            // ==== Timeout ====
+            float timeoutX = startX + paddingX;
+            currentY = startY;
+            foreach (var timeout in elements.Where(e => e.Type == GuiElementType.Timeout))
+            {
+                timeout.X = timeoutX;
+                timeout.Y = currentY;
+                currentY += timeout.Height + paddingY;
+            }
+
+            // ==== Button + Event Group ====
+            float buttonX = timeoutX + paddingX;
+            float eventX = buttonX + 200;
+
+            currentY = startY;
+            var buttons = elements.Where(e => e.Type == GuiElementType.Button).ToList();
+
+            foreach (var button in buttons)
+            {
+                // ボタン配置
+                button.X = buttonX;
+                button.Y = currentY;
+
+                // 同じ Target を持つ Event 全て取得
+                var relatedEvents = elements
+                    .Where(e => e.Type == GuiElementType.Event && e.Target == button.Target)
+                    .ToList();
+
+                float eventY = currentY;
+
+                foreach (var evt in relatedEvents)
+                {
+                    evt.X = eventX;
+                    evt.Y = eventY;
+
+                    eventY += evt.Height + 10;  // イベント間の間隔
+                }
+
+                // Eventが複数ある場合、縦に並んだ高さに合わせて次のボタンのYを調整
+                float blockHeight = Math.Max(button.Height, (eventY - currentY));
+                currentY += blockHeight + paddingY;
+            }
+
+            // ==== Targetを持たない孤立イベント ====
+            currentY += paddingY;
+            foreach (var evt in elements.Where(e => e.Type == GuiElementType.Event && e.X == 0 && e.Y == 0))
+            {
+                evt.X = eventX;
+                evt.Y = currentY;
+                currentY += evt.Height + paddingY;
+            }
+        }
+
+
+
 
         public IEnumerable<GuiElement> Convert(string markdown)
         {
@@ -40,6 +112,7 @@ namespace _2vdm_spec_generator.Services
                         });
                     }
                 }
+                ArrangeElements(elements);
                 return elements;
             }
             else if (lines[0].Trim().StartsWith("## "))
@@ -234,14 +307,15 @@ namespace _2vdm_spec_generator.Services
                                 }
                             }
                         EndOfEventList:;
+                            ArrangeElements(elements);
                             return elements;
                         }
                     }
                 }
-
+                ArrangeElements(elements);
                 return elements;
             }
-
+            ArrangeElements(elements);
             return elements;
         }
 
