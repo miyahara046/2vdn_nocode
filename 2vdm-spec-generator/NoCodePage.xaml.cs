@@ -1,3 +1,4 @@
+using _2vdm_spec_generator.Services;
 using _2vdm_spec_generator.View;
 using _2vdm_spec_generator.ViewModel;
 using Microsoft.Maui.Controls;
@@ -18,14 +19,39 @@ namespace _2vdm_spec_generator
             DiagramContainer.Content = _diagramRenderer;
         }
 
+
         protected override void OnAppearing()
         {
             base.OnAppearing();
 
+
+
             if (BindingContext is NoCodePageViewModel vm)
             {
+
+                if (vm.GuiElements == null)
+                    System.Diagnostics.Debug.WriteLine("GuiElements is NULL");
+                else
+                    System.Diagnostics.Debug.WriteLine($"GuiElements count = {vm.GuiElements.Count}");
+
                 // 初回描画
                 _diagramRenderer.Render(vm.GuiElements);
+
+                // ドラッグによる位置変化を VM に通知して保存する
+                _diagramRenderer.PositionsChanged = (elements) =>
+                {
+                    MainThread.BeginInvokeOnMainThread(() =>
+                    {
+                        vm.SaveGuiPositions(elements); // 既存：positions.json 保存
+                                                       // + Markdown の並び替えも行う
+                        try
+                        {
+                            UiToMarkdownConverter.UpdateMarkdownOrder(vm.SelectedItem.FullPath, elements);
+                        }
+                        catch { /* エラーはUIを壊さないように無視 */ }
+                    });
+                };
+
 
                 // 一度だけ登録する（重複登録防止）
                 vm.PropertyChanged -= Vm_PropertyChanged;
