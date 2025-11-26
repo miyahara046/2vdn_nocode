@@ -19,7 +19,7 @@ namespace _2vdm_spec_generator.View
         // レイアウト定数（必要に応じて調整）
         private const float spacing = 80f;
         private const float leftColumnX = 40f;    // Screen / Button / Operation の固定 X
-        private const float rightColumnX = 350f;  // Event の固定 X
+        private const float rightColumnX = 200f;  // Event の固定 X
         private const float timeoutStartX = 40f;  // Timeout 固定 X
         private const float timeoutStartY = 8f;   // Timeout の開始 Y
 

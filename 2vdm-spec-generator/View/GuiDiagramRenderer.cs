@@ -35,6 +35,17 @@ namespace _2vdm_spec_generator.View
         // 外部に最終座標を渡すためのコールバック
         public Action<IEnumerable<GuiElement>> PositionsChanged { get; set; }
 
+        public void SetElements(IEnumerable<GuiElement> elements)
+        {
+            _drawable.Elements = elements.ToList();
+
+
+            _drawable.ArrangeNodes();
+            _graphicsView.Invalidate();
+        }
+
+
+
         public GuiDiagramRenderer()
         {
             _drawable = new GuiDiagramDrawable();

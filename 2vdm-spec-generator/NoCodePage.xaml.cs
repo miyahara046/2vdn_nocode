@@ -19,12 +19,21 @@ namespace _2vdm_spec_generator
             DiagramContainer.Content = _diagramRenderer;
         }
 
+
         protected override void OnAppearing()
         {
             base.OnAppearing();
 
+
+
             if (BindingContext is NoCodePageViewModel vm)
             {
+
+                if (vm.GuiElements == null)
+                    System.Diagnostics.Debug.WriteLine("GuiElements is NULL");
+                else
+                    System.Diagnostics.Debug.WriteLine($"GuiElements count = {vm.GuiElements.Count}");
+
                 // èââÒï`âÊ
                 _diagramRenderer.Render(vm.GuiElements);
 

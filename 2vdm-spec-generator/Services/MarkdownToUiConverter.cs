@@ -15,7 +15,7 @@ namespace _2vdm_spec_generator.Services
 
         private void ArrangeElements(List<GuiElement> elements)
         {
-            float startX = 200;
+            float startX = 40;
             float startY = 80;
             float paddingY = 80;
             float paddingX = 250;
@@ -107,7 +107,7 @@ namespace _2vdm_spec_generator.Services
                             Type = GuiElementType.Screen,
                             Name = name,
                             Description = "",
-                            X = 300,
+                            X = 200,
                             Y = 80 + elements.Count * 90
                         });
                     }

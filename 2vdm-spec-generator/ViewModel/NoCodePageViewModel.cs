@@ -196,6 +196,12 @@ namespace _2vdm_spec_generator.ViewModel
                 IsScreenListAddButtonVisible = false;
                 IsClassAllButtonVisible = false;
             }
+
+            var uiConverter = new MarkdownToUiConverter();
+            GuiElements = new ObservableCollection<GuiElement>(uiConverter.Convert(MarkdownContent));
+
+            // JSON から位置を反映
+            LoadGuiPositionsToElements();
         }
 
         // ===== 新規 Markdown 作成 =====
@@ -501,6 +507,37 @@ namespace _2vdm_spec_generator.ViewModel
         }
 
 
+        private void EnsureGuiPositionsJsonExists()
+        {
+            if (SelectedItem == null || string.IsNullOrWhiteSpace(SelectedItem.FullPath)) return;
+
+            string posPath = Path.ChangeExtension(SelectedItem.FullPath, ".positions.json");
+
+            if (File.Exists(posPath)) return; // 既にある場合は何もしない
+
+            // 現在の GUI 要素を元に JSON を作成
+            var list = GuiElements.Select(e => new GuiElementPosition
+            {
+                Name = e.Name,
+                X = e.X,
+                Y = e.Y
+            }).ToList();
+
+            if (list.Count == 0) return; // 要素がなければ作らない
+
+            try
+            {
+                var options = new JsonSerializerOptions { WriteIndented = true };
+                string json = JsonSerializer.Serialize(list, options);
+                File.WriteAllText(posPath, json);
+            }
+            catch
+            {
+                // 保存失敗は無視
+            }
+        }
+
+
 
         // ===== スタートページに戻る =====
 
@@ -523,6 +560,8 @@ namespace _2vdm_spec_generator.ViewModel
 
             // 位置保存ファイルがあれば読み込んで反映
             LoadGuiPositionsToElements();
+
+            EnsureGuiPositionsJsonExists();
         }
 
         // 保存 (SelectedItem がセットされている前提)
@@ -544,7 +583,6 @@ namespace _2vdm_spec_generator.ViewModel
 
                 var posPath = Path.ChangeExtension(SelectedItem.FullPath, ".positions.json");
                 File.WriteAllText(posPath, json);
-                LoadMarkdownAndVdm(SelectedItem.FullPath);
             }
             catch
             {
@@ -555,36 +593,44 @@ namespace _2vdm_spec_generator.ViewModel
         // 読み込み（ファイルから位置を復元して GuiElements に適用）
         private void LoadGuiPositionsToElements()
         {
-            if (SelectedItem == null || string.IsNullOrWhiteSpace(SelectedItem.FullPath)) return;
-
-            var posPath = Path.ChangeExtension(SelectedItem.FullPath, ".positions.json");
-            if (!File.Exists(posPath)) return;
-
             try
             {
+                if (SelectedItem == null || string.IsNullOrWhiteSpace(SelectedItem.FullPath))
+                    return;
+
+                var posPath = Path.ChangeExtension(SelectedItem.FullPath, ".positions.json");
+
+                // JSON ファイルが存在しない場合はスキップ
+                if (!File.Exists(posPath))
+                    return;
+
                 var json = File.ReadAllText(posPath);
                 var list = JsonSerializer.Deserialize<List<GuiElementPosition>>(json);
-                if (list == null || GuiElements == null) return;
 
-                // マッチするノード名に位置を適用
+                if (list == null || list.Count == 0)
+                    return;
+
+                // GUI 要素に反映
                 foreach (var pos in list)
                 {
-                    var node = GuiElements.FirstOrDefault(g => g.Name == pos.Name);
-                    if (node != null)
+                    var el = GuiElements.FirstOrDefault(e => e.Name == pos.Name);
+                    if (el != null)
                     {
-                        node.X = pos.X;
-                        node.Y = pos.Y;
+                        el.X = pos.X;
+                        el.Y = pos.Y;
                     }
                 }
             }
             catch
             {
-                // 読み込み失敗は無視
+                // エラー時も安全に無視
+                return;
             }
         }
+    }
 
-        // GuiElementPosition 用 DTO
-        private class GuiElementPosition
+    // GuiElementPosition 用 DTO
+    public class GuiElementPosition
         {
             public string Name { get; set; }
             public float X { get; set; }
@@ -595,5 +641,5 @@ namespace _2vdm_spec_generator.ViewModel
        
     }
 
-}
+
 
