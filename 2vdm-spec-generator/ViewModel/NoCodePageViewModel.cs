@@ -267,7 +267,7 @@ namespace _2vdm_spec_generator.ViewModel
             File.WriteAllText(Path.ChangeExtension(SelectedItem.FullPath, ".vdmpp"), VdmContent);
         }
 
-        // ===== VDM++ 変換（保存なし） =====
+        // ===== VDM++ 変換（保存なし）=====
         // 現在の選択ファイルを読み込み、VDM++ に変換してファイル（.vdmpp）に保存する。
         // ConvertToVdm は UI から変換を即時に実行したいときに使われる。
         [RelayCommand]
@@ -374,11 +374,21 @@ namespace _2vdm_spec_generator.ViewModel
             );
             if (string.IsNullOrWhiteSpace(buttonName)) return;
 
+            // 重複チェック（ViewModel 内の GuiElements を見て確認）
+            var normalized = buttonName.Trim();
+            bool existsInGui = GuiElements.Any(g => g.Type == GuiElementType.Button && !string.IsNullOrWhiteSpace(g.Name)
+                                                    && string.Equals(g.Name.Trim(), normalized, StringComparison.OrdinalIgnoreCase));
+            if (existsInGui)
+            {
+                await Application.Current.MainPage.DisplayAlert("重複", $"既に同名のボタン \"{normalized}\" が存在します。", "OK");
+                return;
+            }
+
             string path = SelectedItem.FullPath;
             string currentMarkdown = File.ReadAllText(path);
 
             var builder = new UiToMarkdownConverter();
-            string newMarkdown = builder.AddButton(currentMarkdown, buttonName.Trim());
+            string newMarkdown = builder.AddButton(currentMarkdown, normalized);
             File.WriteAllText(path, newMarkdown);
 
             var converter = new MarkdownToVdmConverter();
@@ -388,6 +398,9 @@ namespace _2vdm_spec_generator.ViewModel
             // プロパティを更新して UI に反映させる
             MarkdownContent = newMarkdown;
             VdmContent = vdmContent;
+
+            // 再読込して GuiElements を更新（AddButton でマークダウンが変わったので反映）
+            LoadMarkdownAndVdm(path);
         }
 
         [RelayCommand]
@@ -429,8 +442,42 @@ namespace _2vdm_spec_generator.ViewModel
             var builder = new UiToMarkdownConverter();
             string newMarkdown;
 
-            if (isConditional)
+            // 重複チェック（マークダウン内の既存イベントを直接検索して判定）
+            // 非条件イベント: "- {button}押下 → {target}" の完全一致を避ける
+            if (!isConditional)
             {
+                string eventName = await Shell.Current.DisplayPromptAsync(
+                    "イベント", "イベントの遷移先や名前を入力してください", "OK", "キャンセル", placeholder: "TargetScreen"
+                );
+                if (string.IsNullOrWhiteSpace(eventName)) return;
+
+                string candidateLine = $"- {selectedButton}押下 → {eventName.Trim()}";
+                var lines = currentMarkdown.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).Select(l => l.Trim()).ToArray();
+
+                if (lines.Any(l => string.Equals(l, candidateLine, StringComparison.OrdinalIgnoreCase)))
+                {
+                    await Shell.Current.DisplayAlert("重複", $"同じイベント \"{candidateLine}\" は既に存在します。", "OK");
+                    return;
+                }
+
+                newMarkdown = builder.AddEvent(currentMarkdown, selectedButton.Trim(), eventName.Trim());
+            }
+            else
+            {
+                // 条件分岐イベント：既にそのボタンのイベントブロックが存在しないか確認
+                var lines = currentMarkdown.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+                bool blockExists = lines.Any(l => l.TrimStart().StartsWith($"- {selectedButton}押下", StringComparison.OrdinalIgnoreCase));
+
+                if (blockExists)
+                {
+                    // 既存ブロックがある場合は重複追加を禁止（もしくは確認してブランチ追加する案がある）
+                    bool addAnyway = await Shell.Current.DisplayAlert("既存のイベントがあります", $"ボタン \"{selectedButton}\" には既にイベント定義があります。新しい条件分岐を追加しますか？", "追加する", "キャンセル");
+                    if (!addAnyway) return;
+
+                    // ユーザーが "追加する" を選んだ場合は既存ブロックに追加する実装は UiToMarkdownConverter にないため、
+                    // 簡易的に既存マークダウンの末尾に条件分岐ブロックを追加する（既存ブロックとの整合性は簡易処理）
+                }
+
                 var branches = new List<(string Condition, string Target)>();
                 bool addMore = true;
 
@@ -456,16 +503,6 @@ namespace _2vdm_spec_generator.ViewModel
 
                 newMarkdown = builder.AddConditionalEvent(currentMarkdown, selectedButton.Trim(), branches);
             }
-            else
-            {
-                // --- 通常のイベント追加 ---
-                string eventName = await Shell.Current.DisplayPromptAsync(
-                    "イベント", "イベントの遷移先や名前を入力してください", "OK", "キャンセル", placeholder: "TargetScreen"
-                );
-                if (string.IsNullOrWhiteSpace(eventName)) return;
-
-                newMarkdown = builder.AddEvent(currentMarkdown, selectedButton.Trim(), eventName.Trim());
-            }
 
             // --- Markdown と VDM++ 出力更新 ---
             File.WriteAllText(path, newMarkdown);
@@ -475,6 +512,9 @@ namespace _2vdm_spec_generator.ViewModel
 
             MarkdownContent = newMarkdown;
             VdmContent = vdmContent;
+
+            // 再読込して GuiElements を更新
+            LoadMarkdownAndVdm(path);
         }
 
         [RelayCommand]
@@ -640,6 +680,8 @@ namespace _2vdm_spec_generator.ViewModel
         // OnMarkdownContentChanged の最後に LoadGuiPositionsToElements を呼ぶようにしてください
        
     }
+
+
 
 
 
