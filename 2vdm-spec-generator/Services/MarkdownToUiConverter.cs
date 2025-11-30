@@ -18,7 +18,7 @@ namespace _2vdm_spec_generator.Services
             float startX = 40;
             float startY = 80;
             float paddingY = 80;
-            float paddingX = 250;
+            float paddingX = 0;
 
             // ==== Screen ====
             float currentY = startY;
@@ -41,7 +41,7 @@ namespace _2vdm_spec_generator.Services
 
             // ==== Button + Event Group ====
             float buttonX = timeoutX + paddingX;
-            float eventX = buttonX + 200;
+            float eventX = buttonX + 150;
 
             currentY = startY;
             var buttons = elements.Where(e => e.Type == GuiElementType.Button).ToList();

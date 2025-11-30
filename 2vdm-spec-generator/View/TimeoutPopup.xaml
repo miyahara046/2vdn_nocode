@@ -1,84 +1,90 @@
 <?xml version="1.0" encoding="utf-8" ?>
-<toolkit:Popup
+<popup:Popup
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
-    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
-    xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
-    x:Class="_2vdm_spec_generator.View.TimeoutPopup"
-    Size="350,300"
-    CanBeDismissedByTappingOutsideOfPopup="False">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:popup="clr-namespace:CommunityToolkit.Maui.Views;assembly=CommunityToolkit.Maui"
+    x:Class="_2vdm_spec_generator.View.TimeoutPopup">
 
-    <VerticalStackLayout Padding="10" Spacing="6"
-                         BackgroundColor="{AppThemeBinding Light=#FFFFFF, Dark=#1E1E1E}">
+    <Grid>
 
-        <!-- タイトルバー -->
-        <Frame BackgroundColor="{AppThemeBinding Light=#007AFF, Dark=#1E88E5}"
-               Padding="6"
-               HasShadow="False"
-               CornerRadius="4"
-               Margin="0,0,0,6">
-            <Label Text="⏱ タイムアウト設定"
-                   FontSize="16"
-                   FontAttributes="Bold"
-                   HorizontalOptions="Center"
-                   TextColor="White" />
+        <!-- 背景の半透明オーバーレイ（タップを消費するため TapGesture を追加） -->
+        <BoxView Color="#80000000" HorizontalOptions="Fill" VerticalOptions="Fill">
+            <BoxView.GestureRecognizers>
+                <TapGestureRecognizer Tapped="OnBackgroundTapped" NumberOfTapsRequired="1" />
+            </BoxView.GestureRecognizers>
+        </BoxView>
+
+        <!-- 中央のポップアップ本体（縦幅を広めに設定） -->
+        <Frame
+            Padding="0"
+            CornerRadius="8"
+            BackgroundColor="White"
+            HasShadow="True"
+            WidthRequest="450"
+            HeightRequest="300"
+            HorizontalOptions="Center"
+            VerticalOptions="Center">
+
+            <!-- 上部をやや広め、下部はボタン領域として確保 -->
+            <Grid RowDefinitions="0.75*,0.25*" ColumnDefinitions="*">
+
+                <!-- 上部コンテンツ -->
+                <VerticalStackLayout Grid.Row="0" Padding="16" Spacing="10">
+                    <Label Text="タイムアウト設定" FontAttributes="Bold" FontSize="18" HorizontalOptions="Start" />
+                    <Label Text="秒数を入力してください（正の整数）" FontSize="13" TextColor="Black" HorizontalOptions="Start" />
+                    <Entry x:Name="SecondsEntry"
+                           Placeholder="例: 10"
+                           Keyboard="Numeric"
+                           BackgroundColor="White"
+                           TextColor="Black"
+                           HorizontalOptions="FillAndExpand"
+                           HeightRequest="44" />
+
+                    <Label Text="遷移先を入力してください" FontSize="13" TextColor="Black" HorizontalOptions="Start" />
+                    <Entry x:Name="TargetEntry"
+                           Placeholder="遷移先（例: 画面A）"
+                           BackgroundColor="White"
+                           TextColor="Black"
+                           HorizontalOptions="FillAndExpand"
+                           HeightRequest="44" />
+                </VerticalStackLayout>
+
+                <!-- 下部（グレー領域） -->
+                <BoxView Grid.Row="1" Color="#F0F0F0" />
+
+                <!-- グレー領域内に中央寄せで横幅を揃えたボタン（Gridで等分） -->
+                <Grid Grid.Row="1"
+                      HorizontalOptions="Center"
+                      VerticalOptions="Center"
+                      ColumnDefinitions="*,*"
+                      ColumnSpacing="12"
+                      Padding="8"
+                      WidthRequest="320"> <!-- 必要に応じてここで全体幅を調整 -->
+
+                    <Button Grid.Column="0"
+                            Text="OK"
+                            Clicked="OnConfirmClicked"
+                            BackgroundColor="White"
+                            TextColor="Black"
+                            CornerRadius="6"
+                            BorderColor="#CCCCCC"
+                            BorderWidth="1"
+                            Padding="12,8"
+                            HorizontalOptions="FillAndExpand" />
+
+                    <Button Grid.Column="1"
+                            Text="キャンセル"
+                            Clicked="OnCancelClicked"
+                            BackgroundColor="White"
+                            TextColor="Black"
+                            CornerRadius="6"
+                            BorderColor="#CCCCCC"
+                            BorderWidth="1"
+                            Padding="12,8"
+                            HorizontalOptions="FillAndExpand" />
+                </Grid>
+
+            </Grid>
         </Frame>
-
-        <Label Text="タイムアウト秒数:" 
-               FontAttributes="Bold"
-               FontSize="15"
-               TextColor="{AppThemeBinding Light=#222, Dark=#EEE}" />
-
-        <!-- 秒数入力欄 -->
-        <Frame CornerRadius="5"
-               BorderColor="{AppThemeBinding Light=#888, Dark=#555}"
-               Padding="2"
-               HasShadow="False"
-               Margin="0">
-            <Entry x:Name="SecondsEntry"
-                   Placeholder="例: 30"
-                   Keyboard="Numeric"
-                   TextColor="{AppThemeBinding Light=#000, Dark=#FFF}"
-                   PlaceholderColor="{AppThemeBinding Light=#999, Dark=#AAA}"
-                   FontSize="14" />
-        </Frame>
-
-        <Label Text="遷移先:" 
-               FontAttributes="Bold"
-               FontSize="15"
-               TextColor="{AppThemeBinding Light=#222, Dark=#EEE}" />
-
-        <!-- 遷移先入力欄 -->
-        <Frame CornerRadius="5"
-               BorderColor="{AppThemeBinding Light=#888, Dark=#555}"
-               Padding="2"
-               HasShadow="False"
-               Margin="0">
-            <Entry x:Name="TargetEntry"
-                   Placeholder="例: 画面A"
-                   TextColor="{AppThemeBinding Light=#000, Dark=#FFF}"
-                   PlaceholderColor="{AppThemeBinding Light=#999, Dark=#AAA}"
-                   FontSize="14" />
-        </Frame>
-
-        <!-- ボタン群 -->
-        <HorizontalStackLayout HorizontalOptions="End"
-                               Spacing="10"
-                               Margin="0,6,0,0">
-            <Button Text="OK"
-                    BackgroundColor="{AppThemeBinding Light=#007AFF, Dark=#1E88E5}"
-                    TextColor="White"
-                    CornerRadius="5"
-                    HeightRequest="28"
-                    WidthRequest="80"
-                    Clicked="OnConfirmClicked" />
-
-            <Button Text="キャンセル"
-                    BackgroundColor="{AppThemeBinding Light=#E0E0E0, Dark=#444}"
-                    TextColor="{AppThemeBinding Light=#333, Dark=#EEE}"
-                    CornerRadius="5"
-                    HeightRequest="28"
-                    WidthRequest="80"
-                    Clicked="OnCancelClicked" />
-        </HorizontalStackLayout>
-    </VerticalStackLayout>
-</toolkit:Popup>
+    </Grid>
+</popup:Popup>
