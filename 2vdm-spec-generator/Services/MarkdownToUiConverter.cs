@@ -85,6 +85,7 @@ namespace _2vdm_spec_generator.Services
 
 
 
+
         public IEnumerable<GuiElement> Convert(string markdown)
         {
             var elements = new List<GuiElement>();
@@ -284,24 +285,94 @@ namespace _2vdm_spec_generator.Services
                                         var eventMatch = EventPattern.Match(content);
                                         if (eventMatch.Success)
                                         {
-                                            var target = eventMatch.Groups["Target"].Value.Trim(); 
-                                            elements.Add(new GuiElement
+                                            // 左辺と右辺を取得
+                                            var leftName = eventMatch.Groups["Name"].Value.Trim();
+                                            var rightTarget = eventMatch.Groups["Target"].Value.Trim();
+
+                                            if (string.IsNullOrEmpty(rightTarget))
                                             {
-                                                Type = GuiElementType.Event,
-                                                Name = target, 
-                                                Target = target,
-                                                Description = ""
-                                            });
+                                                // 例: "- タイムアウト →" のように右辺が空 -> 左辺を Name/Target として扱う
+                                                elements.Add(new GuiElement
+                                                {
+                                                    Type = GuiElementType.Event,
+                                                    Name = leftName,
+                                                    Target = leftName,
+                                                    Description = ""
+                                                });
+                                            }
+                                            else
+                                            {
+                                                // 改良: 左辺がタイムアウト（またはタイムアウトを含む表現）の場合は既存の Timeout 要素に紐づける
+                                                GuiElement timeoutEl = null;
+
+                                                // 1) 左辺が Timeout 名と完全一致するケース
+                                                timeoutEl = elements.FirstOrDefault(e => e.Type == GuiElementType.Timeout && e.Name == leftName);
+
+                                                // 2) 左辺が Timeout 名を含む、または Timeout 名が左辺に含まれるケース
+                                                if (timeoutEl == null)
+                                                {
+                                                    timeoutEl = elements.FirstOrDefault(e => e.Type == GuiElementType.Timeout && !string.IsNullOrWhiteSpace(e.Name) && leftName.Contains(e.Name));
+                                                }
+                                                if (timeoutEl == null)
+                                                {
+                                                    timeoutEl = elements.FirstOrDefault(e => e.Type == GuiElementType.Timeout && !string.IsNullOrWhiteSpace(e.Name) && e.Name.Contains(leftName));
+                                                }
+
+                                                // 3) 左辺が 'タイムアウト' を直接含む場合、タイムアウト要素が一つだけならそれに紐づける
+                                                if (timeoutEl == null && leftName.Contains("タイムアウト"))
+                                                {
+                                                    timeoutEl = elements.FirstOrDefault(e => e.Type == GuiElementType.Timeout);
+                                                }
+
+                                                if (timeoutEl != null)
+                                                {
+                                                    // Event は右側を Name (表示対象)、Target を timeout の Name にする
+                                                    elements.Add(new GuiElement
+                                                    {
+                                                        Type = GuiElementType.Event,
+                                                        Name = rightTarget,
+                                                        Target = timeoutEl.Name,
+                                                        Description = ""
+                                                    });
+                                                }
+                                                else
+                                                {
+                                                    // 通常の "A → B" は右辺を Name/Target にする（従来挙動）
+                                                    elements.Add(new GuiElement
+                                                    {
+                                                        Type = GuiElementType.Event,
+                                                        Name = rightTarget,
+                                                        Target = rightTarget,
+                                                        Description = ""
+                                                    });
+                                                }
+                                            }
                                         }
                                         else
                                         {
                                             // '→' がない、またはその他の通常のイベント
-                                            elements.Add(new GuiElement
+                                            // ここで、イベント名が既存の Timeout 名と一致するなら Target にセットしておくと親和性が上がる
+                                            var possibleName = content;
+                                            var timeout = elements.FirstOrDefault(e => e.Type == GuiElementType.Timeout && e.Name == possibleName);
+                                            if (timeout != null)
                                             {
-                                                Type = GuiElementType.Event,
-                                                Name = content,
-                                                Description = ""
-                                            });
+                                                elements.Add(new GuiElement
+                                                {
+                                                    Type = GuiElementType.Event,
+                                                    Name = possibleName,
+                                                    Target = possibleName,
+                                                    Description = ""
+                                                });
+                                            }
+                                            else
+                                            {
+                                                elements.Add(new GuiElement
+                                                {
+                                                    Type = GuiElementType.Event,
+                                                    Name = content,
+                                                    Description = ""
+                                                });
+                                            }
                                         }
                                     }
                                 }
