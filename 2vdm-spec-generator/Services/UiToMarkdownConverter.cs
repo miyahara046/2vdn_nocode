@@ -8,8 +8,35 @@ using _2vdm_spec_generator.ViewModel;
 
 namespace _2vdm_spec_generator.Services
 {
+    /// <summary>
+    /// UI 操作（画面上の要素操作）を Markdown テキストに反映するためのユーティリティ。
+    /// 
+    /// 対象読者:
+    /// - C# 言語仕様や UI 描画・テキスト処理の基礎を理解している「C# 諸学者」向けに、
+    ///   実装のアルゴリズム、設計上のトレードオフ、注意点（端的な複雑度や副作用）を注記している。
+    /// 
+    /// 役割:
+    /// - ユーザー操作（クラス見出し追加、ボタン／イベント／タイムアウトの追加）を
+    ///   Markdown 文字列に挿入・更新する責務を持つ。
+    /// - 既存の Markdown 構造を可能な限り壊さずに、行単位でテキストを編集する方針を採る。
+    /// 
+    /// 設計上の注意:
+    /// - 本クラスはライン指向（行列）で文字列を扱う。Markdown 槴文の厳密なパーサとしてではなく、
+    ///   実用的なテキスト編集器として簡易なルールに従って編集する。
+    /// - 名前（Heading やリストのラベル）一致に依存するため、Markdown 側の表記ぶれや重複に弱い点がある。
+    /// - スレッドセーフではない（呼び出し元で同期を保証すること）。ファイル I/O を伴う静的メソッドは
+    ///   呼び出し環境で例外処理・排他制御を行うことを推奨する。
+    /// </summary>
     internal class UiToMarkdownConverter
     {
+        /// <summary>
+        /// 先頭行をクラス見出しにする（または上書きする）。
+        /// - 入力: 既存 markdown とクラス名（例: "# MyClass" の先頭部分）
+        /// - ロジック: 行分割して先頭行を置換。空ファイルなら行を追加。
+        /// 
+        /// 計算量: O(n) 行結合・分割（n は行数）
+        /// 注意点: 行終端は Environment.NewLine を用いて結合するため、呼び出し元の改行ポリシーに依存する。
+        /// </summary>
         public string AddClassHeading(string markdown, string className)
         {
             var lines = string.IsNullOrWhiteSpace(markdown)
@@ -24,6 +51,11 @@ namespace _2vdm_spec_generator.Services
             return string.Join(Environment.NewLine, lines);
         }
 
+        /// <summary>
+        /// 画面一覧に画面名を追加する。
+        /// - ファイル上の 2 行目を必ず空行にする（視覚的区切りのため）。
+        /// - 3 行目以降に "- {screenName}" を追加する。
+        /// </summary>
         public string AddScreenList(string markdown, string screenName)
         {
             var lines = markdown.Split(Environment.NewLine).ToList();
@@ -44,6 +76,18 @@ namespace _2vdm_spec_generator.Services
             return string.Join(Environment.NewLine, lines);
         }
 
+        /// <summary>
+        /// 「### 有効ボタン一覧」セクションにボタンを追加する。
+        /// アルゴリズムのポイント:
+        /// - まず先頭 5 行（小さいファイルで見つかることが多いため）から見出し探索を行う。
+        /// - 見出しが見つかれば、その見出し直後の適切な位置（空行、または次の見出し直前）を挿入箇所とする。
+        /// - 見つからなければ、ファイル先頭付近（最初の 4 行の最後の非空行の次）に見出しとリストを挿入する。
+        /// 
+        /// 計算量: O(n)（行走査）だが探索領域は通常小さいため定数に近い。
+        /// 注意点:
+        /// - 改行コードの混在を考慮して複数種の改行区切りで Split している。
+        /// - Name 重複や既に同名リスト項目が存在するかのチェックは呼び出し元で行う想定。
+        /// </summary>
         public string AddButton(string markdown, string buttonName)
         {
             // 改行コードの種類に関わらず正しく分割できるように、複数の改行コードを区切り文字として指定
@@ -130,7 +174,17 @@ namespace _2vdm_spec_generator.Services
             return string.Join(Environment.NewLine, lines);
         }
 
-        //イベント追加（ボタン選択時の処理を想定）
+        /// <summary>
+        /// 非条件（単純）イベントを追加する。
+        /// - セクション「### イベント一覧」が存在すればそのセクション末尾に追加、
+        ///   なければ適切な位置に見出しとともに追加する。
+        /// - 挿入される行のフォーマットは: "- {ボタン名}押下 → {イベント先}"
+        /// 
+        /// 注意点:
+        /// - 既存の同一行の重複チェックは行っていない（呼び出し元で検査されている想定）。
+        /// - Markdown の見出しレベル（#, ##, ###）を単純に文字列比較で扱っているため、
+        ///   より厳密な構文解析が必要な場合は Markdown パーサを導入すること。
+        /// </summary>
         public string AddEvent(string markdown, string buttonName, string eventTarget)
         {
             string[] newLineSeparators = { Environment.NewLine, "\r\n", "\n", "\r" };
@@ -190,6 +244,19 @@ namespace _2vdm_spec_generator.Services
             return string.Join(Environment.NewLine, lines);
         }
 
+        /// <summary>
+        /// 条件分岐イベント（複数ブランチ）を追加する。
+        /// - 基本的な出力形式:
+        ///   - {button}押下 →
+        ///       - {condition1} → {target1}
+        ///       - {condition2} → {target2}
+        /// - branches 引数は (Condition, Target) のタプルリストで、null は ArgumentNullException とする。
+        /// 
+        /// 実装メモ:
+        /// - まず "### イベント一覧" セクションの有無を確認し、存在しなければ新規追加する。
+        /// - メイン行を追加した後、各分岐を 2 スペースインデントの "- " 行として追加する。
+        /// - 入力の正規化（Trim）を行っているが、複雑な記法や入れ子構造には対応しない。
+        /// </summary>
         public string AddConditionalEvent(string markdown, string buttonName, List<(string Condition, string Target)> branches)
         {
             if (branches == null) throw new ArgumentNullException(nameof(branches));
@@ -267,6 +334,16 @@ namespace _2vdm_spec_generator.Services
         }
 
 
+        /// <summary>
+        /// タイムアウト（秒数）と、そのタイムアウト時の遷移先を Markdown に追加または更新する。
+        /// 処理の流れ:
+        /// 1) 2 行目に "- {N}秒でタイムアウト" を追加または上書き
+        /// 2) "### イベント一覧" セクションを探して、"- タイムアウト → {target}へ" 行を上書きまたは追加
+        /// 
+        /// 注意点:
+        /// - 既存の "でタイムアウト" 表記の検出は簡易な contains ベース。柔軟性より実用性を優先している。
+        /// - イベント一覧がない場合は末尾にセクションを作る。
+        /// </summary>
         public string AddTimeoutEvent(string markdown, int timeoutSeconds, string target)
         {
             var lines = markdown.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).ToList();
@@ -304,7 +381,7 @@ namespace _2vdm_spec_generator.Services
             }
 
             // -----------------------------
-            // ❷ イベント一覧セクションの処理
+            // ❷ イベント一覧セクションの開始／終了位置を決定（再取得）
             // -----------------------------
             int eventHeadingIndex = -1;
             for (int i = 0; i < lines.Count; i++)
@@ -316,57 +393,76 @@ namespace _2vdm_spec_generator.Services
                 }
             }
 
-            int insertionIndex;
+            int sectionStart = -1;
+            int sectionEnd = -1;
             if (eventHeadingIndex != -1)
             {
-                // イベント一覧が存在
-                insertionIndex = eventHeadingIndex + 1;
-                while (insertionIndex < lines.Count)
+                sectionStart = eventHeadingIndex + 1;
+                sectionEnd = sectionStart;
+                while (sectionEnd < lines.Count)
                 {
-                    var t = lines[insertionIndex].Trim();
+                    var t = lines[sectionEnd].Trim();
                     if (string.IsNullOrEmpty(t) || t.StartsWith("### ") || t.StartsWith("## ") || t.StartsWith("# ")) break;
-                    insertionIndex++;
+                    sectionEnd++;
                 }
             }
             else
             {
-                // イベント一覧がない場合 → 新規追加
-                insertionIndex = lines.Count;
+                // イベント一覧がない場合は末尾にセクションを追加してその範囲を設定
+                // 先に空行と見出しを追加
                 lines.Add(string.Empty);
                 lines.Add(eventHeading);
-                insertionIndex = lines.Count;
+                sectionStart = lines.Count; // 新しいセクションの先頭（まだ要素はない）
+                sectionEnd = sectionStart;
             }
 
             // -----------------------------
-            // ❸ 「タイムアウト → ～」行を上書きまたは追加
+            // ❸ セクション内で既存の "- タイムアウト →" 行を探して上書き、なければセクション末尾へ挿入
             // -----------------------------
             int actionLineIndex = -1;
-            for (int i = 0; i < lines.Count; i++)
+            if (sectionStart >= 0)
             {
-                if (lines[i].Trim().StartsWith("- タイムアウト →"))
+                for (int i = sectionStart; i < sectionEnd; i++)
                 {
-                    actionLineIndex = i;
-                    break;
+                    if (lines[i].TrimStart().StartsWith("- タイムアウト →"))
+                    {
+                        actionLineIndex = i;
+                        break;
+                    }
                 }
-            }
 
-            string actionLine = $"- タイムアウト → {target}へ";
+                string actionLine = $"- タイムアウト → {target}へ";
 
-            if (actionLineIndex != -1)
-            {
-                // 既存行を上書き
-                lines[actionLineIndex] = actionLine;
-            }
-            else
-            {
-                // イベント一覧末尾に追加
-                lines.Insert(insertionIndex, actionLine);
+                if (actionLineIndex != -1)
+                {
+                    // 既存行を上書き（セクション内）
+                    lines[actionLineIndex] = actionLine;
+                }
+                else
+                {
+                    // セクション末尾（sectionEnd）に挿入
+                    lines.Insert(sectionEnd, actionLine);
+                }
             }
 
             return string.Join(Environment.NewLine, lines);
         }
 
 
+        /// <summary>
+        /// Markdown ファイルの中で、GUI 上の要素位置（elements に基づく Y 順）に合わせて
+        /// 「有効ボタン一覧」と「イベント一覧」の順序を再構築してファイルへ書き戻すユーティリティ。
+        /// 
+        /// 実装のポイント:
+        /// - ファイルを丸ごと読み込み、行単位で操作した後、上書き保存する（File I/O を伴う）。
+        /// - ReplaceListSection / ReplaceEventSection を使ってそれぞれのセクションを置換する。
+        /// - 書き戻しは UTF-8 (System.Text.Encoding.UTF8) を用いる。
+        /// 
+        /// 注意:
+        /// - ファイル操作で例外が発生する可能性がある（アクセス権、同時書き込み等）。呼び出し側で例外対処を行うか、
+        ///   このメソッドを try/catch で囲むことを推奨する。
+        /// - elements の内容（Name 非 null、Y 座標など）に依存して動作するため、事前検証を行っておくと安全。
+        /// </summary>
         public static void UpdateMarkdownOrder(string markdownFilePath, IEnumerable<GuiElement> elements)
         {
             if (string.IsNullOrWhiteSpace(markdownFilePath) || !File.Exists(markdownFilePath)) return;
@@ -374,17 +470,59 @@ namespace _2vdm_spec_generator.Services
 
             var lines = File.ReadAllLines(markdownFilePath).ToList();
 
-            // 1) 有効ボタン一覧を抽出して書き換える
-            lines = ReplaceListSection(lines, "### 有効ボタン一覧", BuildButtonList(elements));
+            const string buttonHeading = "### 有効ボタン一覧";
+            const string eventHeading = "### イベント一覧";
 
-            // 2) イベント一覧を抽出して書き換える（イベントブロック単位で並べ替え）
-            lines = ReplaceEventSection(lines, "### イベント一覧", BuildEventBlockOrder(elements));
+            int buttonIdx = lines.FindIndex(l => l.Trim() == buttonHeading);
+            int eventIdx = lines.FindIndex(l => l.Trim() == eventHeading);
 
-            // 上書き保存
+            var buttonList = BuildButtonList(elements);
+
+            // ボタンリストが空なら見出しの挿入/置換をスキップ（空見出し禁止）
+            if (buttonList.Count > 0)
+            {
+                if (buttonIdx != -1)
+                {
+                    lines = ReplaceListSection(lines, buttonHeading, buttonList);
+                }
+                else
+                {
+                    var newSection = new List<string> { buttonHeading };
+                    foreach (var it in buttonList)
+                        newSection.Add($"- {it}");
+                    newSection.Add(string.Empty);
+
+                    if (eventIdx != -1)
+                    {
+                        lines.InsertRange(eventIdx, newSection);
+                    }
+                    else
+                    {
+                        int insertAfter = -1;
+                        for (int i = 0; i < Math.Min(lines.Count, 6); i++)
+                        {
+                            var t = lines[i].Trim();
+                            if (t.StartsWith("## ") || t.StartsWith("# "))
+                                insertAfter = i;
+                        }
+
+                        int insertionIndex = (insertAfter >= 0) ? insertAfter + 1 : lines.Count;
+                        if (insertionIndex > lines.Count) insertionIndex = lines.Count;
+                        lines.InsertRange(insertionIndex, newSection);
+                    }
+                }
+            }
+            // イベント一覧は常に（この時点でボタン節があれば前にある）置換する
+            lines = ReplaceEventSection(lines, eventHeading, BuildEventBlockOrder(elements));
+
             File.WriteAllLines(markdownFilePath, lines, Encoding.UTF8);
         }
 
-        // 有効ボタン一覧用：elements から Button の名前を Y 順で取り出す（Name が null でなければ）
+        /// <summary>
+        /// Button 要素を Y 座標順に並べ替えて名前リストを作成するヘルパー。
+        /// - 戻り値はリストの各要素がリスト用の文字列（Name.Trim()）である。
+        /// - 計算量: O(n log n) (OrderBy)
+        /// </summary>
         private static List<string> BuildButtonList(IEnumerable<GuiElement> elements)
         {
             return elements
@@ -394,8 +532,11 @@ namespace _2vdm_spec_generator.Services
                 .ToList();
         }
 
-        // イベント一覧用：elements から Event の“キー”（比較に使うテキスト）を取得
-        // ここでは GuiElement.Name を使用してマッチを試みる。
+        /// <summary>
+        /// Event 要素の名前を Y 座標順で抽出するヘルパー。
+        /// - ReplaceEventSection の並べ替えキーとして使う。
+        /// - 計算量: O(n log n)（OrderBy）
+        /// </summary>
         private static List<string> BuildEventBlockOrder(IEnumerable<GuiElement> elements)
         {
             return elements
@@ -405,7 +546,15 @@ namespace _2vdm_spec_generator.Services
                 .ToList();
         }
 
-        // 指定見出しセクション（単純なトップレベルの - item リスト）を置き換える
+        /// <summary>
+        /// 指定見出しセクションを単純なリストセクション（- item の順次行）として置き換える。
+        /// アルゴリズム:
+        /// - 見出し位置を探し、その直後から次の空行または次の見出しまでを既存セクションと見なす。
+        /// - 新しい heading + items + 空行 を作成し、既存の該当範囲を置換する。
+        /// 
+        /// 注意:
+        /// - セクション内に複雑なサブ構造がある場合（ネストやコードブロック等）は破壊的になる可能性がある。
+        /// </summary>
         private static List<string> ReplaceListSection(List<string> lines, string heading, List<string> newItems)
         {
             if (newItems == null || newItems.Count == 0) return lines;
@@ -438,8 +587,24 @@ namespace _2vdm_spec_generator.Services
             return result;
         }
 
-        // イベントセクションは「ブロック」単位（トップレベルの "- " とそれに続くインデント付き行群）で扱う。
-        // blocksOrder は GuiElement.Name のリスト（Y順）で、それをベースにブロックを並べ替える。
+        /// <summary>
+        /// イベントセクションを「ブロック単位」で扱い、ブロックの順序を再構築する。
+        /// ブロック定義:
+        /// - トップレベルの "- " で始まる行をブロック先頭とし、
+        /// - それに続くインデント（先頭に２つ以上のスペース、あるいはタブ）または空行をブロックの一部とする。
+        /// 
+        /// 並べ替えアルゴリズム:
+        /// - blocksOrder (GuiElement.Name のリスト) に従い、各 desired 名称を含むブロックを前から順に採用する（部分一致）。
+        /// - マッチしなかったブロックは後から元の順序で追加する（安定性のため）。
+        /// 
+        /// 設計上の注意:
+        /// - マッチングは単純な部分文字列一致 (Contains) に依存するため、
+        ///   異なるブロックに同じキーワードが含まれると意図しないマッチングが起きることがある。
+        /// - ブロックの検出は行頭 "- " に依存しているため、Markdown の複雑な構造（ネストされたリスト、コードブロック中の行等）には脆弱。
+        /// - より堅牢にする場合は完全な Markdown パーサを用いて AST を操作することを検討する。
+        /// 
+        /// 計算量: ブロック収集 O(n), 並べ替えマッチングは O(b * m)（b=ブロック数, m=blocksOrder 長）だが実用上小さい。
+        /// </summary>
         private static List<string> ReplaceEventSection(List<string> lines, string heading, List<string> blocksOrder)
         {
             int idx = lines.FindIndex(l => l.Trim() == heading);
@@ -549,7 +714,7 @@ namespace _2vdm_spec_generator.Services
                     result.Add(bl);
             }
 
-            // Add a blank line after section (to separate from next heading), only if original had one
+            // Add a blank line after section (to separate from next heading), only if original  had one
             result.Add(string.Empty);
 
             // Append the rest after endOfSectionCursor

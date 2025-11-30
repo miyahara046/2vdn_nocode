@@ -23,27 +23,21 @@ namespace _2vdm_spec_generator
             _diagramRenderer = new GuiDiagramRenderer();
             DiagramContainer.Content = _diagramRenderer;
 
-            // PositionsChanged を購読して ViewModel に位置情報と Markdown の再書き込みを行う
             if (this.BindingContext is NoCodePageViewModel vm)
             {
                 _diagramRenderer.PositionsChanged = elements =>
                 {
-                    // UI スレッドで処理
                     MainThread.BeginInvokeOnMainThread(() =>
                     {
                         try
                         {
-                            // 1) ViewModel に位置を保存（JSON）
                             vm.SaveGuiPositions(elements);
 
-                            // 2) 現在選択中の Markdown ファイルがあれば、そのファイル内の
-                            //    有効ボタン一覧 / イベント一覧の順序を elements の Y 順に合わせて上書きする
                             var mdPath = vm.SelectedItem?.FullPath;
                             if (!string.IsNullOrWhiteSpace(mdPath) && File.Exists(mdPath))
                             {
                                 UiToMarkdownConverter.UpdateMarkdownOrder(mdPath, elements);
 
-                                // Markdown と VDM++ を再読み込み / 再生成して ViewModel に反映
                                 var newMd = File.ReadAllText(mdPath);
                                 vm.MarkdownContent = newMd;
 
@@ -53,16 +47,21 @@ namespace _2vdm_spec_generator
                                 File.WriteAllText(Path.ChangeExtension(mdPath, ".vdmpp"), newVdm);
                             }
 
-                            // 3) ViewModel の GuiElements を最新の順序に合わせて更新（UI 再描画用）
                             vm.GuiElements = new ObservableCollection<GuiElement>(elements.Select(e => e));
-
-                            // 4) Renderer を再描画（要素参照は同じなので位置が反映される）
                             _diagramRenderer.Render(vm.GuiElements);
                         }
                         catch
                         {
-                            // 失敗しても UI を壊したくないため無視（必要ならログ出力を追加）
                         }
+                    });
+                };
+
+                // 追加: ノードクリック時に ViewModel の SelectedGuiElement にセット
+                _diagramRenderer.NodeClicked = el =>
+                {
+                    MainThread.BeginInvokeOnMainThread(() =>
+                    {
+                        vm.SelectedGuiElement = el;
                     });
                 };
             }
@@ -74,10 +73,8 @@ namespace _2vdm_spec_generator
 
             if (BindingContext is NoCodePageViewModel vm)
             {
-                // 初回描画
                 _diagramRenderer.Render(vm.GuiElements);
 
-                // 一度だけ登録する（重複登録防止）
                 vm.PropertyChanged -= Vm_PropertyChanged;
                 vm.PropertyChanged += Vm_PropertyChanged;
             }

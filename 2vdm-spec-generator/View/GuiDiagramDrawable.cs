@@ -6,56 +6,76 @@ using System.Linq;
 namespace _2vdm_spec_generator.View
 {
     /// <summary>
-    /// GUI 図（ノードと線）の描画処理を担当するクラス。
+    /// GUI 図（ノード＋ノード間のエッジ）の描画を担う IDrawable 実装。
     /// 
-    /// - ノード（Screen/Button/Event/Timeout/Operation）をキャンバスに描画する
-    /// - ノードの初期配置（位置が 0,0 の場合に自動レイアウト）
-    /// - ノードとノードをつなぐ線（矢印）の描画
+    /// 対象読者：
+    /// - C# の言語設計や UI 描画の基礎を知る「C# 諸学者」を想定し、アルゴリズム的観点や設計上の注意点を注記している。
     /// 
-    /// IDrawable を実装しており、GraphicsView で使用される。
+    /// 責務（責任分離）:
+    /// - ViewModel 側が持つ `GuiElement` コレクションを受け取り、GraphicsView に必要な描画を実行する。
+    /// - 自動レイアウト（単純ヒューリスティック）を必要に応じて行うが、高度なグラフレイアウトは行わない。
+    /// - 線（エッジ）は element.Target を用いて単純に直線で結び、先端に矢羽を描く。
+    /// 
+    /// 設計上の重要点（学術的/工学的観点）:
+    /// - 描画は UI スレッド（GraphicsView の描画コールバック）で実行される前提。Elements が別スレッドで更新される可能性がある場合、
+    ///   呼び出し元で防護（ディスパッチ、コピー等）すること。ここでは同期処理は行っていない（副作用を避けるため）。
+    /// - 自動レイアウトは寿命が短く、簡潔なルールベース（列配置）を用いる。大規模なノードや複雑な DAG の場合は別アルゴリズム（Sugiyama 法や力学法）を推奨。
+    /// - 名前(Name)をキーにして線を結ぶため、Name の一意性が保証されないと期待する線が引けない（仕様上の仮定）。
+    /// - 計算量: ArrangeNodes / Draw の主処理は各要素を 1 回走査するため O(N)。線描画のための辞書構築も O(N)（ただしハッシュ操作は平均 O(1)）。
     /// </summary>
     public class GuiDiagramDrawable : IDrawable
     {
-        // 描画対象のノード（外部の ViewModel から渡される）
+        /// <summary>
+        /// 描画対象ノード群（ViewModel から設定されることを想定する可変リスト）。
+        /// 注意:
+        /// - Draw 呼び出し中にこのリストが変更されると不定動作の原因となるため、スレッド競合を避けるには呼び出し側でコピーを渡すか Dispatcher 経由で同期すること。
+        /// </summary>
         public List<GuiElement> Elements { get; set; } = new();
 
-        // 他の場所でも使いたいので public const として幅・高さを定義
+        // ノード矩形の共通定義（他クラスと数値を合わせるため public const）
         public const float NodeWidth = 160f;
         public const float NodeHeight = 50f;
 
-        // ==== レイアウトに使う値 ====
-        private const float spacing = 80f;         // ノード間の縦方向スペース
-        private const float leftColumnX = 40f;     // 左列の X 座標（Screen / Button / Operation）
-        private const float rightColumnX = 200f;   // 右列の X（Event の位置）
-        private const float timeoutStartX = 40f;   // Timeout の X 座標（上固定）
-        private const float timeoutStartY = 8f;    // Timeout の最初の Y 座標
+        // ==== レイアウトパラメータ ====
+        // これらは現在の単純レイアウトを決める定数。将来的にユーザー設定やレスポンシブ対応に外出し可能。
+        private const float spacing = 80f;         // ノード間の垂直スペース（ピクセル）
+        private const float leftColumnX = 40f;     // 左列 X 座標（Screen/Button/Operation 用）
+        private const float rightColumnX = 200f;   // 右列 X 座標（Event 用）
+        private const float timeoutStartX = 40f;   // Timeout ノードの X（上固定）
+        private const float timeoutStartY = 8f;    // Timeout の開始 Y
 
         /// <summary>
-        /// 初期位置が未設定（X=0, Y=0）の要素に自動的に位置を割り当てる。
+        /// 初期配置ルーチン:
+        /// - X=0,Y=0 を未配置と見なして自動配置を試みる。
+        /// - Timeout を上部に固定し、その下から Screen→Button→Operation を左列に、Event を右列に配置する。
         /// 
-        /// 初回描画時、すべてのノードの位置が 0,0 の場合に実行される。
-        /// ※ ユーザーが移動したノードは上書きしない。
+        /// アルゴリズム的特徴:
+        /// - 単純で決定性あり。計算量は O(N)（各要素を一巡する）。
+        /// - 衝突回避や重なり解消は行わない（重なりが生じた場合、別段の reflow/packing アルゴリズムが必要）。
+        /// - 「既に配置済みの要素は上書きしない」ポリシーを取っている（ユーザー操作で位置が決まったものを尊重）。
         /// </summary>
         public void ArrangeNodes()
         {
             float timeoutY = timeoutStartY;
 
             // ==== 1) Timeout ノードは上から順に固定配置 ====
+            // Timeout は特別扱い：常に上部に集めて固定ノード（IsFixed=true とする）
             foreach (var el in Elements.Where(e => e.Type == GuiElementType.Timeout))
             {
-                el.IsFixed = true;         // 移動不可にする（論理的なフラグ）
+                el.IsFixed = true; // 論理フラグとして移動不可を示す
                 el.X = timeoutStartX;
                 el.Y = timeoutY;
 
-                // 縦に積む
+                // タイムアウト同士は NodeHeight + 10 の間隔で積む（固定間隔）
                 timeoutY += NodeHeight + 10f;
             }
 
-            // ==== 2) Screen は左列に縦並び ====
+            // ==== 2) Screen を左列に縦並び ====
+            // timeoutY の下から配置を始めることで、タイムアウトが常に視界上部にあるようにする
             int screenIndex = 0;
             foreach (var el in Elements.Where(e => e.Type == GuiElementType.Screen))
             {
-                if (IsUnpositioned(el)) // X=0, Y=0 を未配置とみなす
+                if (IsUnpositioned(el)) // 未配置のものだけ初期位置を与える
                 {
                     el.X = leftColumnX;
                     el.Y = timeoutY + screenIndex * spacing;
@@ -63,12 +83,13 @@ namespace _2vdm_spec_generator.View
                 screenIndex++;
             }
 
-            // ==== 3) Button は Screen の下に続けて縦並び ====
+            // ==== 3) Button を Screen の下に続けて配置 ====
             int buttonIndex = 0;
             foreach (var el in Elements.Where(e => e.Type == GuiElementType.Button))
             {
                 if (IsUnpositioned(el))
                 {
+                    // Screen の末尾から継続して配置する設計
                     el.X = leftColumnX;
                     el.Y = timeoutY + screenIndex * spacing + buttonIndex * spacing;
                 }
@@ -101,32 +122,43 @@ namespace _2vdm_spec_generator.View
         }
 
         /// <summary>
-        /// ノードが未配置（X=0 かつ Y=0）の場合に true を返す。
+        /// 未配置判定（簡易定義: X==0 && Y==0 を未配置とする）
+        /// - 実務的には NaN や負値、特別フラグを使う方が堅牢になる場合がある。
         /// </summary>
         private static bool IsUnpositioned(GuiElement e) => e.X == 0 && e.Y == 0;
 
         /// <summary>
-        /// GraphicsView により呼び出される描画メソッド。
+        /// 描画エントリポイント（GraphicsView が呼ぶ）。
         /// 
-        /// - 背景描画
-        /// - ノードの自動配置チェック
-        /// - ノード間の線（矢印）描画
-        /// - ノード（形状と色）描画
+        /// 手順:
+        /// 1. 背景塗りつぶし
+        /// 2. 初期配置（全要素が未配置のときのみ）
+        /// 3. 名前ベースの位置辞書作成（線描画用）
+        /// 4. 線（直線）と矢印描画
+        /// 5. 各ノードの描画（形状・色・ラベル・選択枠）
+        /// 
+        /// 注意点:
+        /// - Name をキーに位置辞書を作るため Name の一意性を前提としている（重複があると線が欠ける）。
+        /// - 描画中に Elements が変わると Dictionary の構築や Draw のループで例外や不整合が起きうる。
+        ///   必要なら描画開始時に要素の shallow copy を作る実装が望ましい（ここでは行っていない）。
         /// </summary>
         public void Draw(ICanvas canvas, RectF dirtyRect)
         {
-            // === 背景を白で塗りつぶす ===
+            // 背景を白で塗りつぶす（キャンバスクリアの意味合い）
             canvas.FillColor = Colors.White;
             canvas.FillRectangle(dirtyRect);
 
-            // 描画対象が何もなければ終了
+            // 対象がなければ早期終了（無駄な処理を避ける）
             if (Elements == null || Elements.Count == 0) return;
 
-            // === 初回描画時：全ノードが 0,0 のときだけ初期配置を行う ===
+            // 初回描画時の自動配置判定:
+            // - 全要素が (0,0) の場合だけ ArrangeNodes を呼び出す（部分的に未配置のものは上書きしない）
             if (!Elements.Any(e => e.X != 0 || e.Y != 0))
                 ArrangeNodes();
 
-            // === 名前をキーに位置辞書を作成（線を引くときに使う） ===
+            // 名前をキーにした位置辞書を作成（線を引くときのソース/ターゲット検出に使う）
+            // Dictionary 作成は O(N) だが、キーが重複すると ArgumentException になるため
+            // 事前に Name の一意性を保証するか、TryAdd ベースの処理に変更することができる。
             var positions = Elements.Where(e => !string.IsNullOrWhiteSpace(e.Name))
                                     .ToDictionary(e => e.Name, e => new PointF(e.X, e.Y));
 
@@ -136,7 +168,7 @@ namespace _2vdm_spec_generator.View
 
             foreach (var el in Elements)
             {
-                // Target が設定されていて、辞書に位置情報がある場合
+                // Target が設定されており、かつ positions 辞書に両側が存在する場合にのみ線を引く
                 if (!string.IsNullOrEmpty(el.Target) &&
                     positions.ContainsKey(el.Target) &&
                     positions.ContainsKey(el.Name))
@@ -144,12 +176,16 @@ namespace _2vdm_spec_generator.View
                     var f = positions[el.Name];
                     var t = positions[el.Target];
 
-                    // 線の start は右側中央、end は左側中央
+                    // 直線の始点はソースの右中央 (f.X + NodeWidth, f.Y + NodeHeight/2)
                     var s = new PointF(f.X + NodeWidth, f.Y + NodeHeight / 2f);
+                    // 終点はターゲットの左中央 (t.X, t.Y + NodeHeight/2)
                     var eP = new PointF(t.X, t.Y + NodeHeight / 2f);
 
+                    // 直線を描く。将来、曲線（ベジェ）やオフセットを入れる拡張も可能。
                     canvas.DrawLine(s, eP);
-                    DrawArrow(canvas, s, eP); // 矢印先端を描く
+
+                    // 終端に矢印（羽根）を描画する（軽量表現）
+                    DrawArrow(canvas, s, eP);
                 }
             }
 
@@ -158,7 +194,7 @@ namespace _2vdm_spec_generator.View
             {
                 var r = new RectF(el.X, el.Y, NodeWidth, NodeHeight);
 
-                // 種類ごとの背景色
+                // ノードの背景色を種類ごとに分ける（視覚的カテゴリ化）
                 canvas.FillColor = el.Type switch
                 {
                     GuiElementType.Screen => Colors.Lavender,
@@ -171,28 +207,31 @@ namespace _2vdm_spec_generator.View
 
                 canvas.StrokeColor = Colors.Black;
 
-                // === ノードの形状を種類ごとに描画 ===
+                // 形状描画: 種類に応じて角丸矩形／楕円／菱形／矩形などを選択する
+                // 学術的には「形状はセマンティクスを伝える符号化」であり、意味の差を表現する。
                 switch (el.Type)
                 {
                     case GuiElementType.Screen:
+                        // 角丸長方形
                         canvas.FillRoundedRectangle(r, 8);
                         canvas.DrawRoundedRectangle(r, 8);
                         break;
 
                     case GuiElementType.Button:
+                        // 楕円（ボタンらしさを視覚的に表現）
                         canvas.FillEllipse(r);
                         canvas.DrawEllipse(r);
                         break;
 
                     case GuiElementType.Event:
                     case GuiElementType.Operation:
-                        // ダイヤ型（Event / Operation）
+                        // 菱形（ダイヤ）: Path を構築して塗りつぶし・輪郭描画
                         using (var path = new PathF())
                         {
-                            path.MoveTo(r.X + r.Width / 2f, r.Y);               // 上
-                            path.LineTo(r.Right, r.Y + r.Height / 2f);         // 右
-                            path.LineTo(r.X + r.Width / 2f, r.Bottom);        // 下
-                            path.LineTo(r.X, r.Y + r.Height / 2f);            // 左
+                            path.MoveTo(r.X + r.Width / 2f, r.Y);               // 上頂点
+                            path.LineTo(r.Right, r.Y + r.Height / 2f);         // 右頂点
+                            path.LineTo(r.X + r.Width / 2f, r.Bottom);        // 下頂点
+                            path.LineTo(r.X, r.Y + r.Height / 2f);            // 左頂点
                             path.Close();
                             canvas.FillPath(path);
                             canvas.DrawPath(path);
@@ -200,31 +239,34 @@ namespace _2vdm_spec_generator.View
                         break;
 
                     case GuiElementType.Timeout:
+                        // 矩形（固定ノードとして目立たせる）
                         canvas.FillRectangle(r);
                         canvas.DrawRectangle(r);
                         break;
 
                     default:
+                        // フォールバックは角丸長方形
                         canvas.FillRoundedRectangle(r, 8);
                         canvas.DrawRoundedRectangle(r, 8);
                         break;
                 }
 
-                // === 選択されているノードはオレンジ枠で強調表示 ===
+                // 選択強調表示:
+                // - el.IsSelected が true の場合、オレンジ色の外枠を通常枠より太く描く（視認性を高める）
                 if (el.IsSelected)
                 {
                     canvas.StrokeColor = Colors.Orange;
                     canvas.StrokeSize = 3;
 
-                    // 少し大きめの枠を描くために Expand を使用
+                    // 少し余白を持たせた枠を描く（Expand 拡張を利用）
                     canvas.DrawRoundedRectangle(r.Expand(4), 8);
 
-                    // 元の設定に戻す
+                    // 元のペン設定に戻す
                     canvas.StrokeSize = 2;
                     canvas.StrokeColor = Colors.Black;
                 }
 
-                // === ノード中央に名前を描画 ===
+                // ラベル描画（中央揃え）
                 canvas.FontColor = Colors.Black;
                 canvas.FontSize = 14;
                 canvas.DrawString(el.Name ?? "", r,
@@ -233,32 +275,41 @@ namespace _2vdm_spec_generator.View
         }
 
         /// <summary>
-        /// ノード間の線の先端に矢印を描画する。
-        /// 三角形ではなく線 2 本で表現している。
+        /// 線の終端に矢羽（左右 2 本の線）を描画する。
+        /// 
+        /// 幾何的説明:
+        /// - 線分の角度 angle = atan2(dy, dx)
+        /// - 終端点 end を基準に角度 ± offset の方向に長さ size の線を引くことで羽根を表現する。
+        /// 
+        /// 実装上の選択:
+        /// - 三角形を塗りつぶす代わりに 2 本の線を描いているため描画は軽量。
+        /// - 視覚的な好みやスケーラビリティに応じて、塗りつぶし三角形やベジェ曲線の矢印に改良可能。
         /// </summary>
         private void DrawArrow(ICanvas canvas, PointF start, PointF end)
         {
-            float size = 6f; // 矢印の大きさ
+            float size = 6f; // 羽根の長さ（ピクセル）
             canvas.StrokeColor = Colors.Gray;
             canvas.StrokeSize = 2;
 
-            // 線分の角度を計算
+            // 線分の角度（ラジアン）
             float angle = MathF.Atan2(end.Y - start.Y, end.X - start.X);
 
-            // 左右の羽根の位置を計算
+            // 羽根の左右方向の角度オフセット（0.3 ラジアン ≒ 17.2 度）
             var p1 = new PointF(end.X - size * MathF.Cos(angle - 0.3f),
                                 end.Y - size * MathF.Sin(angle - 0.3f));
             var p2 = new PointF(end.X - size * MathF.Cos(angle + 0.3f),
                                 end.Y - size * MathF.Sin(angle + 0.3f));
 
+            // 羽根を描く（線 2 本）
             canvas.DrawLine(end, p1);
             canvas.DrawLine(end, p2);
         }
     }
 
     /// <summary>
-    /// RectF を拡張するメソッド。
-    /// ノードの選択枠（少し大きめの四角）を描くために使用される。
+    /// RectF の拡張メソッド群（現状は Expand のみ）。
+    /// - Expand は矩形を margin 分だけ外側に拡張した RectF を返すユーティリティ。
+    /// - 表示系で選択枠などを元の矩形より少し外側に描きたい場合に用いる。
     /// </summary>
     public static class RectFExtensions
     {
