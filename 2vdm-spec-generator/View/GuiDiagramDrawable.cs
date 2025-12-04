@@ -258,7 +258,20 @@ namespace _2vdm_spec_generator.View
                 if (TryResolvePosition(el.Name, positions, normPositions, out var f) &&
                     TryResolvePosition(el.Target, positions, normPositions, out var t))
                 {
-                    var s = new PointF(f.X + NodeWidth, f.Y + NodeHeight / 2f);
+                    // 修正: ボタンから始まる線は楕円の右端を起点にする
+                    PointF s;
+                    if (el.Type == GuiElementType.Button)
+                    {
+                        // ボタンは楕円で描画しており、見た目上の右端は矩形右端より内側にある。
+                        float buttonEllipseWi = NodeWidth / 2f;
+                        float ellipseRight = f.X + (NodeWidth + buttonEllipseWi) / 2f;
+                        s = new PointF(ellipseRight, f.Y + NodeHeight / 2f);
+                    }
+                    else
+                    {
+                        s = new PointF(f.X + NodeWidth, f.Y + NodeHeight / 2f);
+                    }
+
                     var eP = new PointF(t.X, t.Y + NodeHeight / 2f);
                     canvas.DrawLine(s, eP);
                     DrawArrow(canvas, s, eP);
