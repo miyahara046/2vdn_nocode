@@ -76,6 +76,8 @@ namespace _2vdm_spec_generator.View
                 buttonIndex++;
             }
 
+
+
             // Operation 未配置のものは右端に積む準備（位置は後で分岐に合わせる）
             var opList = Elements.Where(e => e.Type == GuiElementType.Operation).ToList();
 
@@ -91,6 +93,38 @@ namespace _2vdm_spec_generator.View
                     evt.IsFixed = true;
                 }
             }
+
+            // ----- 単一（非条件）イベントを対応ボタンに常に同期 -----
+            // 条件分岐イベント（Branches を持つもの）は後で別処理するため除外
+            foreach (var evt in Elements.Where(e => e.Type == GuiElementType.Event && (e.Branches == null || e.Branches.Count == 0)))
+            {
+                // タイムアウト紐づけ済みで固定されている場合は上書きしない
+                if (evt.IsFixed && !IsUnpositioned(evt)) continue;
+
+                GuiElement correspondingButton = null;
+
+                if (!string.IsNullOrWhiteSpace(evt.Name))
+                {
+                    var evtNameNorm = evt.Name.Trim();
+                    correspondingButton = buttonList.FirstOrDefault(b =>
+                        !string.IsNullOrWhiteSpace(b.Name) &&
+                        evtNameNorm.StartsWith(b.Name.Trim(), StringComparison.OrdinalIgnoreCase));
+                }
+
+                if (correspondingButton == null && !string.IsNullOrWhiteSpace(evt.Target))
+                {
+                    correspondingButton = buttonList.FirstOrDefault(b => !string.IsNullOrWhiteSpace(b.Target) && string.Equals(b.Target.Trim(), evt.Target.Trim(), StringComparison.OrdinalIgnoreCase));
+                }
+
+                if (correspondingButton != null)
+                {
+                    // 常に同期：ボタンの Y に合わせ、イベントを中間列に寄せて固定する
+                    evt.X = midColumnX;
+                    evt.Y = correspondingButton.Y;
+                    evt.IsFixed = true;
+                }
+            }
+            // ---------------------------------------------------------------------
 
             // ----- 分岐イベント処理（子イベントをノードとして可視化） -----
             BranchVisuals.Clear();
@@ -223,7 +257,6 @@ namespace _2vdm_spec_generator.View
             // 既に位置が設定されている要素については ArrangeNodes() 内の IsUnpositioned 判定で上書きされないため安全
             ArrangeNodes();
 
-            // 以下は従来の処理（そのまま）
             // positions: Name -> PointF
             var positions = Elements.Where(e => !string.IsNullOrWhiteSpace(e.Name))
                             .ToDictionary(e => e.Name, e => new PointF(e.X, e.Y));
@@ -288,7 +321,7 @@ namespace _2vdm_spec_generator.View
             float condH = NodeHeight * 0.7f;
             // 変更：ひし形幅を狭めて縦長に近づける（横幅が広すぎる問題を修正）
             float diamondW = NodeWidth * 0.8f;
-            float diamondH = NodeHeight * 0.7f; // 少し縦長に（視認性優先）
+            float diamondH = NodeHeight * 0.7f;
             // condition と target 間の水平ギャップ
             float midGap = 24f;
             // 条件矩形を右に寄せる微調整（要求により右へ）
@@ -303,7 +336,7 @@ namespace _2vdm_spec_generator.View
                 PointF basePoint;
                 if (bv.Button != null)
                 {
-                    // 楕円はボタン矩形内で中央寄せして描画しているので右端を計算する
+                    // 楕円はボタン矩形内で中央寄せして描画しており、右端を計算する
                     float ellipseRight = bv.Button.X + (NodeWidth + buttonEllipseW) / 2f;
                     basePoint = new PointF(ellipseRight, bv.Button.Y + NodeHeight / 2f);
                 }
