@@ -15,7 +15,7 @@ namespace _2vdm_spec_generator.Services
 
         private void ArrangeElements(List<GuiElement> elements)
         {
-            float startX = 40;
+            float startX = 20;
             float startY = 40;
             float paddingY = 80;
             float paddingX = 0;
@@ -41,7 +41,7 @@ namespace _2vdm_spec_generator.Services
 
             // ==== Button + Event Group ====
             float buttonX = timeoutX + paddingX;
-            float eventX = buttonX + 150;
+            float eventX = buttonX + 120;
 
             currentY = startY;
             var buttons = elements.Where(e => e.Type == GuiElementType.Button).ToList();

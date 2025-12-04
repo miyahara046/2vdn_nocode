@@ -315,7 +315,7 @@ namespace _2vdm_spec_generator.View
                         {
                             el.IsFixed = true;
                             // タイムアウトに紐づくイベントは左列（タイムアウト列）に寄せる等、見た目も固定する
-                            el.X = LeftColumnX;
+                            el.X = RightColumnX;
                             break;
                         }
                     }

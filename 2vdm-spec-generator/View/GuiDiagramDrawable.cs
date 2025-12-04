@@ -18,12 +18,25 @@ namespace _2vdm_spec_generator.View
 
         // レイアウト
         private const float spacing = 80f;
-        private const float leftColumnX = 40f;
+        private const float leftColumnX = 80f;
         private const float midColumnX = leftColumnX + NodeWidth + 40f; // 分岐ハンドル／イベント中継用
         private const float opColumnX = 520f; // 操作（Operation）を並べる右端列
         private const float timeoutStartX = leftColumnX;
         private const float timeoutStartY = 8f;
         private const float timeoutEventOffset = NodeWidth + 100f;
+
+        // 分岐の可視ノード（描画用）を保持
+        private readonly List<BranchVisual> _branchVisuals = new();
+
+        private class BranchVisual
+        {
+            public GuiElement ParentEvent { get; set; }
+            public GuiElement Button { get; set; }
+            public string Condition { get; set; }
+            public string Target { get; set; }
+            public float CenterX { get; set; }   // 中央参照点（ダイヤモンド中心の基準）
+            public float CenterY { get; set; }
+        }
 
         public void ArrangeNodes()
         {
@@ -78,75 +91,96 @@ namespace _2vdm_spec_generator.View
                 }
             }
 
-            // 分岐を持つイベント（Branchesが存在するもの）をボタンに紐づけて中間列に配置し、
-            // 各 branch.Target に対応する Operation ノードを右端に配置して Y を分岐毎に揃える
+            // ----- 分岐イベント処理（子イベントをノードとして可視化） -----
+            _branchVisuals.Clear();
+            float branchSpacing = 18f; // 見た目で使う間隔（Draw側とも整合）
             var eventsWithBranches = Elements.Where(e => e.Type == GuiElementType.Event && e.Branches != null && e.Branches.Count > 0).ToList();
 
             foreach (var evt in eventsWithBranches)
             {
-                // 対応ボタンを探索（ボタン名がイベント名の先頭にある等を考慮）
+                // 対応ボタンを探索（既存ロジック）
                 GuiElement correspondingButton = null;
+                var buttonListLocal = Elements.Where(e => e.Type == GuiElementType.Button).ToList();
                 if (!string.IsNullOrWhiteSpace(evt.Name))
                 {
                     var evtNameNorm = evt.Name.Trim();
-                    // try exact prefix match against button name
-                    correspondingButton = buttonList.FirstOrDefault(b =>
+                    correspondingButton = buttonListLocal.FirstOrDefault(b =>
                         !string.IsNullOrWhiteSpace(b.Name) &&
                         evtNameNorm.StartsWith(b.Name.Trim(), StringComparison.OrdinalIgnoreCase));
 
-                    // fallback: match by Target (イベント.Target がボタン.Target を参照している場合)
                     if (correspondingButton == null && !string.IsNullOrWhiteSpace(evt.Target))
                     {
-                        correspondingButton = buttonList.FirstOrDefault(b => !string.IsNullOrWhiteSpace(b.Target) && string.Equals(b.Target.Trim(), evt.Target.Trim(), StringComparison.OrdinalIgnoreCase));
+                        correspondingButton = buttonListLocal.FirstOrDefault(b => !string.IsNullOrWhiteSpace(b.Target) && string.Equals(b.Target.Trim(), evt.Target.Trim(), StringComparison.OrdinalIgnoreCase));
                     }
                 }
 
-                // 見つかったボタンに合わせてイベントを中間列に配置、もしくは既定の位置
+                // ブランチ数に応じて各子ノードの中心Yを算出（子ノードは midColumnX に揃える）
+                int n = evt.Branches.Count;
+                float totalHeight = n * NodeHeight + Math.Max(0, n - 1) * branchSpacing;
+
+                // 基準となる centerY を決める元値（既存ボタン位置またはイベント位置）
+                float anchorCenterY = (correspondingButton != null) ? (correspondingButton.Y + NodeHeight / 2f) : (evt.Y + NodeHeight / 2f);
+
+                // まず top を anchorCenterY を中心に算出（後でボタンをブロック中央に合わせる）
+                float top = anchorCenterY - totalHeight / 2f;
+                float centerReferenceX = midColumnX + NodeWidth / 2f; // 中間列の中心基準
+
+                for (int i = 0; i < n; i++)
+                {
+                    var br = evt.Branches[i];
+                    float centerY = top + NodeHeight / 2f + i * (NodeHeight + branchSpacing);
+                    _branchVisuals.Add(new BranchVisual
+                    {
+                        ParentEvent = evt,
+                        Button = correspondingButton,
+                        Condition = br.Condition,
+                        Target = br.Target,
+                        CenterX = centerReferenceX,
+                        CenterY = centerY
+                    });
+
+                    // Branch に対応する Operation を右端に配置する（存在すれば Y をこの子ノード中心に合わせる）
+                    if (!string.IsNullOrWhiteSpace(br.Target))
+                    {
+                        var op = opList.FirstOrDefault(o => !string.IsNullOrWhiteSpace(o.Name) &&
+                                                             string.Equals(o.Name.Trim(), br.Target.Trim(), StringComparison.OrdinalIgnoreCase));
+                        if (op != null)
+                        {
+                            if (IsUnpositioned(op))
+                            {
+                                op.X = opColumnX;
+                                op.Y = centerY - NodeHeight / 2f;
+                                op.IsFixed = true;
+                            }
+                            else
+                            {
+                                // 既に配置済みでも Y を子ノードに合わせる（視認性向上）
+                                op.Y = centerY - NodeHeight / 2f;
+                            }
+                        }
+                    }
+                }
+
+                // ブロック中央を計算して、対応ボタンがあればその上にセンタリングする（要求通り）
+                float blockCenterY = top + totalHeight / 2f;
                 if (correspondingButton != null)
                 {
+                    correspondingButton.Y = blockCenterY - NodeHeight / 2f;
+                }
+
+                // 親イベント自体は中間列へ寄せておく（表示は Draw で抑制する）
+                if (IsUnpositioned(evt))
+                {
                     evt.X = midColumnX;
-                    evt.Y = correspondingButton.Y;
-                    evt.IsFixed = true;
+                    evt.Y = (correspondingButton != null) ? correspondingButton.Y : (top + NodeHeight / 2f - NodeHeight / 2f);
                 }
                 else
                 {
-                    // 見つからなければ右列に配置（既存の挙動を尊重）
-                    if (IsUnpositioned(evt))
-                    {
-                        evt.X = midColumnX;
-                        evt.Y = timeoutY + (buttonIndex++) * spacing;
-                    }
+                    evt.X = midColumnX;
+                    // ensure parent Y aligned with block center for consistency
+                    evt.Y = (correspondingButton != null) ? correspondingButton.Y : evt.Y;
                 }
-
-                // 分岐ごとに対応する Operation を右端に配置
-                float branchSpacing = 18f;
-                float startOffset = -((evt.Branches.Count - 1) * branchSpacing) / 2f;
-                float offset = startOffset;
-                for (int i = 0; i < evt.Branches.Count; i++)
-                {
-                    var br = evt.Branches[i];
-                    if (string.IsNullOrWhiteSpace(br.Target)) { offset += branchSpacing; continue; }
-
-                    // Target 名と一致する Operation を探す（正規化して比較）
-                    var op = opList.FirstOrDefault(o => !string.IsNullOrWhiteSpace(o.Name) &&
-                                                         string.Equals(o.Name.Trim(), br.Target.Trim(), StringComparison.OrdinalIgnoreCase));
-                    if (op != null)
-                    {
-                        // まだ未配置なら右端列に配置し、Yを分岐に合わせる
-                        if (IsUnpositioned(op))
-                        {
-                            op.X = opColumnX;
-                            op.Y = evt.Y + offset;
-                            op.IsFixed = true;
-                        }
-                        else
-                        {
-                            // 既に配置済みでもYをイベントに近づける（視認性のため）
-                            op.Y = evt.Y + offset;
-                        }
-                    }
-                    offset += branchSpacing;
-                }
+                evt.IsFixed = true;
             }
 
             // それ以外の Event は既存の右列縦並びで配置（未配置のもの）
@@ -202,32 +236,25 @@ namespace _2vdm_spec_generator.View
             // ボタン一覧キャッシュ（分岐接続のため）
             var buttonList = Elements.Where(e => e.Type == GuiElementType.Button).ToList();
 
-            // --- 変更: 分岐親イベントから伸びる線を抑制 ---
-            // 分岐を持つ親イベントのソース名（正規化）を集合化しておく（後でスキップ判定に使う）
-            var parentEventSourceNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var eventsWithBranches = Elements.Where(e => e.Type == GuiElementType.Event && e.Branches != null && e.Branches.Count > 0);
-            foreach (var p in eventsWithBranches)
-            {
-                if (!string.IsNullOrWhiteSpace(p.Name))
-                    parentEventSourceNames.Add(NormalizeLabel(p.Name));
-            }
-
-            // 基本の線描画（Target ベース）
+            // --- 基本の Target ベース線描画（分岐親イベントや子ノード起点の線は描かない） ---
             canvas.StrokeColor = Colors.Gray;
             canvas.StrokeSize = 2;
+
+            // 親イベント（Branches を持つ）から伸びる既存の線は消すために名前集合を作成
+            var parentEventNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var evt in Elements.Where(e => e.Type == GuiElementType.Event && e.Branches != null && e.Branches.Count > 0))
+                if (!string.IsNullOrWhiteSpace(evt.Name)) parentEventNames.Add(NormalizeLabel(evt.Name));
+
             foreach (var el in Elements)
             {
                 if (string.IsNullOrEmpty(el.Target)) continue;
 
-                // 分岐親イベントから伸びる線は描画しない（要求対応）
-                if (el.Type == GuiElementType.Event && el.Branches != null && el.Branches.Count > 0)
-                    continue;
+                // 親イベント要素の基本線は描画しない
+                if (el.Type == GuiElementType.Event && el.Branches != null && el.Branches.Count > 0) continue;
 
-                // また、別アプローチ：親イベントの名前に対応するソース名の線も抑制
-                if (!string.IsNullOrWhiteSpace(el.Name) && parentEventSourceNames.Contains(NormalizeLabel(el.Name)))
-                    continue;
+                // 子ノード（分岐）を可視ノード化するため、親イベント名と一致するソースの通常線は抑制
+                if (!string.IsNullOrWhiteSpace(el.Name) && parentEventNames.Contains(NormalizeLabel(el.Name))) continue;
 
-                // Try resolve both source and target positions with normalization fallback
                 if (TryResolvePosition(el.Name, positions, normPositions, out var f) &&
                     TryResolvePosition(el.Target, positions, normPositions, out var t))
                 {
@@ -238,85 +265,109 @@ namespace _2vdm_spec_generator.View
                 }
             }
 
-            // --- 分岐イベント（親イベントは非表示にして、ボタンから直接分岐を描く） ---
-            foreach (var evt in eventsWithBranches)
+            // --- 分岐の描画：ボタン -> Condition(青長方形) -> Target(緑ひし形) -> 実ターゲット の順で表示 ---
+            // 条件矩形サイズ / ひし形サイズ
+            float condW = NodeWidth * 0.9f;
+            float condH = NodeHeight * 0.7f;
+            float diamondW = NodeWidth * 0.8f;
+            float diamondH = NodeHeight * 0.8f;
+            // condition と target 間の水平ギャップ
+            float midGap = 24f;
+            // 条件矩形を右に寄せる微調整（要求により右へ）
+            float condRightShift = 40f;
+
+            // ボタン楕円幅（半分にする）
+            float buttonEllipseW = NodeWidth / 2f;
+
+            foreach (var bv in _branchVisuals)
             {
-                // 親イベントに紐づくボタンを探索（ArrangeNodes と同じロジック）
-                GuiElement correspondingButton = null;
-                if (!string.IsNullOrWhiteSpace(evt.Name))
-                {
-                    var evtNameNorm = evt.Name.Trim();
-                    correspondingButton = buttonList.FirstOrDefault(b =>
-                        !string.IsNullOrWhiteSpace(b.Name) &&
-                        evtNameNorm.StartsWith(b.Name.Trim(), StringComparison.OrdinalIgnoreCase));
-                    if (correspondingButton == null && !string.IsNullOrWhiteSpace(evt.Target))
-                    {
-                        correspondingButton = buttonList.FirstOrDefault(b => !string.IsNullOrWhiteSpace(b.Target) && string.Equals(b.Target.Trim(), evt.Target.Trim(), StringComparison.OrdinalIgnoreCase));
-                    }
-                }
-
-                // basePoint を決定（ボタンが見つかればボタン右端、無ければ親イベント右端）
+                // basePoint（起点）は対応ボタンがあればボタン右中央、なければ親イベント右中央
                 PointF basePoint;
-                if (correspondingButton != null)
-                    basePoint = new PointF(correspondingButton.X + NodeWidth, correspondingButton.Y + NodeHeight / 2f);
-                else
-                    basePoint = new PointF(evt.X + NodeWidth, evt.Y + NodeHeight / 2f);
-
-                float branchSpacing = 18f;
-                float startOffset = -((evt.Branches.Count - 1) * branchSpacing) / 2f;
-                float offset = startOffset;
-
-                foreach (var br in evt.Branches)
+                if (bv.Button != null)
                 {
-                    var branchPoint = new PointF(basePoint.X + 10f, basePoint.Y + offset);
-
-                    // 線：起点 -> branchPoint
-                    canvas.StrokeColor = Colors.DarkBlue;
-                    canvas.StrokeSize = 2;
-                    canvas.DrawLine(basePoint, branchPoint);
-
-                    // ハンドル
-                    canvas.FillColor = Colors.SkyBlue;
-                    canvas.FillEllipse(new RectF(branchPoint.X - 4f, branchPoint.Y - 4f, 8f, 8f));
-                    canvas.StrokeColor = Colors.DarkBlue;
-                    canvas.DrawEllipse(new RectF(branchPoint.X - 4f, branchPoint.Y - 4f, 8f, 8f));
-
-                    // 条件ラベル
-                    canvas.FontColor = Colors.Black;
-                    canvas.FontSize = 12;
-                    var condText = string.IsNullOrWhiteSpace(br.Condition) ? "(条件)" : br.Condition;
-                    canvas.DrawString(condText, new RectF(branchPoint.X + 8f, branchPoint.Y - 8f, 200f, 16f), HorizontalAlignment.Left, VerticalAlignment.Center);
-
-                    // 対応操作が存在するかを positions で調べ接続（解決ヘルパーを使用）
-                    if (!string.IsNullOrWhiteSpace(br.Target) && TryResolvePosition(br.Target, positions, normPositions, out var targetPos))
-                    {
-                        var targetPoint = new PointF(targetPos.X, targetPos.Y + NodeHeight / 2f);
-                        // branchPoint -> targetPoint
-                        canvas.StrokeColor = Colors.Gray;
-                        canvas.StrokeSize = 1.5f;
-                        canvas.DrawLine(new PointF(branchPoint.X, branchPoint.Y), new PointF(targetPoint.X - 6f, targetPoint.Y));
-                        DrawArrow(canvas, branchPoint, targetPoint);
-                    }
-                    else
-                    {
-                        // 未指定または未配置のターゲット表示
-                        if (string.IsNullOrWhiteSpace(br.Target))
-                            canvas.DrawString("(未指定)", new RectF(branchPoint.X + 8f, branchPoint.Y + 8f, 120f, 14f), HorizontalAlignment.Left, VerticalAlignment.Top);
-                        else
-                            canvas.DrawString($"→ {br.Target}", new RectF(branchPoint.X + 8f, branchPoint.Y + 8f, 180f, 14f), HorizontalAlignment.Left, VerticalAlignment.Top);
-                    }
-
-                    offset += branchSpacing;
+                    // 楕円はボタン矩形内で中央寄せして描画しているので右端を計算する
+                    float ellipseRight = bv.Button.X + (NodeWidth + buttonEllipseW) / 2f;
+                    basePoint = new PointF(ellipseRight, bv.Button.Y + NodeHeight / 2f);
                 }
-                // 戻す
+                else
+                    basePoint = new PointF(bv.ParentEvent.X + NodeWidth, bv.ParentEvent.Y + NodeHeight / 2f);
+
+                // 中央参照点 bv.CenterX はブロックの中心。配置方針：
+                // condCenter = bv.CenterX - (diamondW/2 + midGap/2 + condW/2) + condRightShift
+                // targetCenter = bv.CenterX + (diamondW/2 + midGap/2)
+                float condCenterX = bv.CenterX - (diamondW / 2f + midGap / 2f + condW / 2f) + condRightShift;
+                float targetCenterX = bv.CenterX + (diamondW / 2f + midGap / 2f);
+
+                var condCenter = new PointF(condCenterX, bv.CenterY);
+                var targetCenter = new PointF(targetCenterX, bv.CenterY);
+
+                // 起点 -> 条件矩形左側へ線を引く
+                var condLeft = new PointF(condCenter.X - condW / 2f, condCenter.Y);
+                canvas.StrokeColor = Colors.DarkBlue;
                 canvas.StrokeSize = 2;
-                canvas.StrokeColor = Colors.Black;
+                canvas.DrawLine(basePoint, condLeft);
+
+                // 条件矩形（青）
+                var condRect = new RectF(condCenter.X - condW / 2f, condCenter.Y - condH / 2f, condW, condH);
+                canvas.FillColor = Colors.SkyBlue;
+                canvas.FillRectangle(condRect);
+                canvas.StrokeColor = Colors.DarkBlue;
+                canvas.DrawRectangle(condRect);
+
+                // 条件ラベル（矩形中央）
+                canvas.FontColor = Colors.Black;
+                canvas.FontSize = 12;
+                var condText = string.IsNullOrWhiteSpace(bv.Condition) ? "(条件)" : bv.Condition;
+                canvas.DrawString(condText, condRect, HorizontalAlignment.Center, VerticalAlignment.Center);
+
+                // 矩形右 -> ひし形（Target）左 へ矢印（条件 -> ターゲット）
+                var condRight = new PointF(condCenter.X + condW / 2f, condCenter.Y);
+                var diamondLeft = new PointF(targetCenter.X - diamondW / 2f, targetCenter.Y);
+                // 矩形右から少し内側へ線を引き、矢印でつなぐ
+                canvas.StrokeColor = Colors.DarkGreen;
+                canvas.StrokeSize = 1.8f;
+                canvas.DrawLine(condRight, diamondLeft);
+                DrawArrow(canvas, condRight, diamondLeft);
+
+                // ひし形（緑）描画（ターゲット）
+                canvas.FillColor = Colors.LightGreen;
+                using (var path = new PathF())
+                {
+                    path.MoveTo(targetCenter.X, targetCenter.Y - diamondH / 2f); // top
+                    path.LineTo(targetCenter.X + diamondW / 2f, targetCenter.Y); // right
+                    path.LineTo(targetCenter.X, targetCenter.Y + diamondH / 2f); // bottom
+                    path.LineTo(targetCenter.X - diamondW / 2f, targetCenter.Y); // left
+                    path.Close();
+                    canvas.FillPath(path);
+                    canvas.StrokeColor = Colors.DarkGreen;
+                    canvas.DrawPath(path);
+                }
+
+                // ひし形中央に Target 名を表示（先頭の '→' を除去して表示）
+                var rawTarget = CleanTargetLabel(bv.Target);
+                var targetLabel = string.IsNullOrWhiteSpace(rawTarget) ? "(未指定)" : rawTarget;
+                var targetRect = new RectF(targetCenter.X - diamondW / 2f + 6f, targetCenter.Y - 10f, diamondW - 12f, 20f);
+                canvas.FontColor = Colors.Black;
+                canvas.FontSize = 12;
+                canvas.DrawString(targetLabel, targetRect, HorizontalAlignment.Center, VerticalAlignment.Center);
+
+                // ひし形右端 -> 実ノード(Target) へ線（Target が解決できれば接続）
+                if (!string.IsNullOrWhiteSpace(bv.Target) && TryResolvePosition(bv.Target, positions, normPositions, out var targetPos))
+                {
+                    var diamondRight = new PointF(targetCenter.X + diamondW / 2f, targetCenter.Y);
+                    var targetPoint = new PointF(targetPos.X, targetPos.Y + NodeHeight / 2f);
+
+                    canvas.StrokeColor = Colors.Gray;
+                    canvas.StrokeSize = 1.5f;
+                    canvas.DrawLine(diamondRight, new PointF(targetPoint.X - 6f, targetPoint.Y));
+                    DrawArrow(canvas, diamondRight, targetPoint);
+                }
             }
 
             // ノード本体描画（分岐親イベントはここで描かない）
             foreach (var el in Elements)
             {
-                // 親イベント（Branches があるもの）は表示しない（見た目をボタン→子へ直接にするため）
+                // 親イベント（Branches があるもの）は表示しない（見た目をボタン→Condition→Target にするため）
                 if (el.Type == GuiElementType.Event && el.Branches != null && el.Branches.Count > 0)
                     continue;
 
@@ -335,20 +386,64 @@ namespace _2vdm_spec_generator.View
 
                 canvas.StrokeColor = Colors.Black;
 
-                if (el.Type == GuiElementType.Screen)
+                // ボタンは楕円幅を半分にして中央に寄せて描画
+                if (el.Type == GuiElementType.Button)
+                {
+                    float ellipseW = NodeWidth / 2f;
+                    var ellipseRect = new RectF(el.X + (NodeWidth - ellipseW) / 2f, el.Y, ellipseW, NodeHeight);
+                    canvas.FillEllipse(ellipseRect);
+                    canvas.DrawEllipse(ellipseRect);
+
+                    if (el.IsSelected)
+                    {
+                        canvas.StrokeColor = Colors.Orange;
+                        canvas.StrokeSize = 3;
+                        canvas.DrawEllipse(ellipseRect.Expand(4));
+                        canvas.StrokeSize = 2;
+                        canvas.StrokeColor = Colors.Black;
+                    }
+
+                    // ラベルは楕円の中央に表示（矩形 r ではなく楕円領域に合わせる）
+                    canvas.FontColor = Colors.Black;
+                    canvas.FontSize = 14;
+                    var labelRect = new RectF(ellipseRect.Left, ellipseRect.Top, ellipseRect.Width, ellipseRect.Height);
+                    canvas.DrawString(el.Name ?? "", labelRect, HorizontalAlignment.Center, VerticalAlignment.Center);
+                }
+                else if (el.Type == GuiElementType.Screen)
                 {
                     canvas.FillRoundedRectangle(r, 8);
                     canvas.DrawRoundedRectangle(r, 8);
-                }
-                else if (el.Type == GuiElementType.Button)
-                {
-                    canvas.FillEllipse(r);
-                    canvas.DrawEllipse(r);
+
+                    if (el.IsSelected)
+                    {
+                        canvas.StrokeColor = Colors.Orange;
+                        canvas.StrokeSize = 3;
+                        canvas.DrawRoundedRectangle(r.Expand(4), 8);
+                        canvas.StrokeSize = 2;
+                        canvas.StrokeColor = Colors.Black;
+                    }
+
+                    canvas.FontColor = Colors.Black;
+                    canvas.FontSize = 14;
+                    canvas.DrawString(el.Name ?? "", r, HorizontalAlignment.Center, VerticalAlignment.Center);
                 }
                 else if (el.Type == GuiElementType.Event && attachedToTimeout)
                 {
                     canvas.FillRectangle(r);
                     canvas.DrawRectangle(r);
+
+                    if (el.IsSelected)
+                    {
+                        canvas.StrokeColor = Colors.Orange;
+                        canvas.StrokeSize = 3;
+                        canvas.DrawRectangle(r.Expand(4));
+                        canvas.StrokeSize = 2;
+                        canvas.StrokeColor = Colors.Black;
+                    }
+
+                    canvas.FontColor = Colors.Black;
+                    canvas.FontSize = 14;
+                    canvas.DrawString(el.Name ?? "", r, HorizontalAlignment.Center, VerticalAlignment.Center);
                 }
                 else if (el.Type == GuiElementType.Event || el.Type == GuiElementType.Operation)
                 {
@@ -362,32 +457,59 @@ namespace _2vdm_spec_generator.View
                         canvas.FillPath(path);
                         canvas.DrawPath(path);
                     }
+
+                    if (el.IsSelected)
+                    {
+                        canvas.StrokeColor = Colors.Orange;
+                        canvas.StrokeSize = 3;
+                        canvas.DrawPath(new PathF()
+                        {
+                            // no-op for selection path reuse; keep simple by drawing expanded rounded rect
+                        });
+                        canvas.StrokeSize = 2;
+                        canvas.StrokeColor = Colors.Black;
+                    }
+
+                    canvas.FontColor = Colors.Black;
+                    canvas.FontSize = 14;
+                    canvas.DrawString(el.Name ?? "", r, HorizontalAlignment.Center, VerticalAlignment.Center);
                 }
                 else if (el.Type == GuiElementType.Timeout)
                 {
                     canvas.FillRectangle(r);
                     canvas.DrawRectangle(r);
+
+                    if (el.IsSelected)
+                    {
+                        canvas.StrokeColor = Colors.Orange;
+                        canvas.StrokeSize = 3;
+                        canvas.DrawRectangle(r.Expand(4));
+                        canvas.StrokeSize = 2;
+                        canvas.StrokeColor = Colors.Black;
+                    }
+
+                    canvas.FontColor = Colors.Black;
+                    canvas.FontSize = 14;
+                    canvas.DrawString(el.Name ?? "", r, HorizontalAlignment.Center, VerticalAlignment.Center);
                 }
                 else
                 {
                     canvas.FillRoundedRectangle(r, 8);
                     canvas.DrawRoundedRectangle(r, 8);
-                }
 
-                if (el.IsSelected)
-                {
-                    canvas.StrokeColor = Colors.Orange;
-                    canvas.StrokeSize = 3;
-                    if (el.Type == GuiElementType.Button) canvas.DrawEllipse(r.Expand(4));
-                    else canvas.DrawRoundedRectangle(r.Expand(4), 8);
-                    canvas.StrokeSize = 2;
-                    canvas.StrokeColor = Colors.Black;
-                }
+                    if (el.IsSelected)
+                    {
+                        canvas.StrokeColor = Colors.Orange;
+                        canvas.StrokeSize = 3;
+                        canvas.DrawRoundedRectangle(r.Expand(4), 8);
+                        canvas.StrokeSize = 2;
+                        canvas.StrokeColor = Colors.Black;
+                    }
 
-                // ラベル
-                canvas.FontColor = Colors.Black;
-                canvas.FontSize = 14;
-                canvas.DrawString(el.Name ?? "", r, HorizontalAlignment.Center, VerticalAlignment.Center);
+                    canvas.FontColor = Colors.Black;
+                    canvas.FontSize = 14;
+                    canvas.DrawString(el.Name ?? "", r, HorizontalAlignment.Center, VerticalAlignment.Center);
+                }
             }
         }
 
@@ -399,6 +521,18 @@ namespace _2vdm_spec_generator.View
             // 末尾の全角「へ」や英数スペースを除去
             while (t.EndsWith("へ", StringComparison.Ordinal) || t.EndsWith(" ", StringComparison.Ordinal) || t.EndsWith("　", StringComparison.Ordinal))
                 t = t.Substring(0, t.Length - 1).TrimEnd();
+            return t;
+        }
+
+        // Target 表示用に先頭の矢印を除去してトリムするユーティリティ
+        private static string CleanTargetLabel(string s)
+        {
+            if (string.IsNullOrWhiteSpace(s)) return string.Empty;
+            var t = s.Trim();
+            // 先頭の全角矢印や半角矢印を除去
+            if (t.StartsWith("→")) t = t.Substring(1).Trim();
+            if (t.StartsWith("->")) t = t.Substring(2).Trim();
+            if (t.StartsWith("→")) t = t.TrimStart('→').Trim();
             return t;
         }
 
