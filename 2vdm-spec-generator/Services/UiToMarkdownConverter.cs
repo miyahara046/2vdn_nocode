@@ -10,22 +10,6 @@ namespace _2vdm_spec_generator.Services
 {
     /// <summary>
     /// UI 操作（画面上の要素操作）を Markdown テキストに反映するためのユーティリティ。
-    /// 
-    /// 対象読者:
-    /// - C# 言語仕様や UI 描画・テキスト処理の基礎を理解している「C# 諸学者」向けに、
-    ///   実装のアルゴリズム、設計上のトレードオフ、注意点（端的な複雑度や副作用）を注記している。
-    /// 
-    /// 役割:
-    /// - ユーザー操作（クラス見出し追加、ボタン／イベント／タイムアウトの追加）を
-    ///   Markdown 文字列に挿入・更新する責務を持つ。
-    /// - 既存の Markdown 構造を可能な限り壊さずに、行単位でテキストを編集する方針を採る。
-    /// 
-    /// 設計上の注意:
-    /// - 本クラスはライン指向（行列）で文字列を扱う。Markdown 槴文の厳密なパーサとしてではなく、
-    ///   実用的なテキスト編集器として簡易なルールに従って編集する。
-    /// - 名前（Heading やリストのラベル）一致に依存するため、Markdown 側の表記ぶれや重複に弱い点がある。
-    /// - スレッドセーフではない（呼び出し元で同期を保証すること）。ファイル I/O を伴う静的メソッドは
-    ///   呼び出し環境で例外処理・排他制御を行うことを推奨する。
     /// </summary>
     internal class UiToMarkdownConverter
     {
@@ -48,6 +32,7 @@ namespace _2vdm_spec_generator.Services
             else
                 lines.Add($"#{className}");
 
+            lines = NormalizeEmptyLines(lines);
             return string.Join(Environment.NewLine, lines);
         }
 
@@ -73,6 +58,7 @@ namespace _2vdm_spec_generator.Services
             // 3行目以降に追加
             lines.Add($"- {screenName}");
 
+            lines = NormalizeEmptyLines(lines);
             return string.Join(Environment.NewLine, lines);
         }
 
@@ -163,14 +149,21 @@ namespace _2vdm_spec_generator.Services
                     lines.Add(string.Empty);
                 }
 
-                // 挿入位置（insertionIndex）に ### 有効ボタン一覧 を挿入
-                lines.Insert(insertionIndex, targetHeading);
-
-                // その次の行（insertionIndex + 1）に - buttonName を挿入
-                lines.Insert(insertionIndex + 1, $"- {buttonName}");
+                // 既に直前が空行であれば二重にしない
+                if (insertionIndex > 0 && insertionIndex - 1 < lines.Count && string.IsNullOrWhiteSpace(lines[insertionIndex - 1]))
+                {
+                    // そのまま見出しを挿入
+                    lines.Insert(insertionIndex, targetHeading);
+                    lines.Insert(insertionIndex + 1, $"- {buttonName}");
+                }
+                else
+                {
+                    lines.Insert(insertionIndex, targetHeading);
+                    lines.Insert(insertionIndex + 1, $"- {buttonName}");
+                }
             }
 
-            // 最後に、行を結合してMarkdown文字列を再構築
+            lines = NormalizeEmptyLines(lines);
             return string.Join(Environment.NewLine, lines);
         }
 
@@ -229,9 +222,10 @@ namespace _2vdm_spec_generator.Services
 
                 insertionIndex = (insertAfter >= 0) ? insertAfter + 1 : lines.Count;
 
-                // 空行と見出しを追加
                 if (insertionIndex > lines.Count) insertionIndex = lines.Count;
-                lines.Insert(insertionIndex, string.Empty);
+                // 挿入前が空行でなければ一つ入れるが Normalize が整理する
+                if (insertionIndex == lines.Count || !string.IsNullOrWhiteSpace(lines[Math.Max(0, insertionIndex - 1)]))
+                    lines.Insert(insertionIndex, string.Empty);
                 insertionIndex++;
                 lines.Insert(insertionIndex, eventHeading);
                 insertionIndex++;
@@ -241,6 +235,7 @@ namespace _2vdm_spec_generator.Services
             var newLine = $"- {buttonName}押下 → {eventTarget}";
             lines.Insert(insertionIndex, newLine);
 
+            lines = NormalizeEmptyLines(lines);
             return string.Join(Environment.NewLine, lines);
         }
 
@@ -280,7 +275,7 @@ namespace _2vdm_spec_generator.Services
             int insertionIndex;
             if (eventHeadingIndex != -1)
             {
-                // 見出しがある場合は、そのセクションの末尾を探して挿入
+                // 見出しがある場合は、そのセクションの末尾を探して挿入位置仮決定
                 insertionIndex = eventHeadingIndex + 1;
                 while (insertionIndex < lines.Count)
                 {
@@ -290,6 +285,66 @@ namespace _2vdm_spec_generator.Services
                         break;
                     insertionIndex++;
                 }
+
+                // --- 既存の親イベント行をセクション内で探す（存在すればそのブロック末尾に追加する） ---
+                // 探索範囲は eventHeadingIndex+1 .. insertionIndex-1
+                int sectionStart = eventHeadingIndex + 1;
+                int sectionEnd = Math.Max(sectionStart, insertionIndex); // sectionEnd は挿入候補
+
+                // 正規化した検索キーワード例: "{buttonName}押下"
+                var buttonKey = (buttonName ?? string.Empty).Trim();
+                bool parentFound = false;
+                int parentLineIndex = -1;
+
+                for (int i = sectionStart; i < sectionEnd; i++)
+                {
+                    var line = lines[i];
+                    if (string.IsNullOrWhiteSpace(line)) continue;
+                    // トップレベル行のみ対象（先頭にスペースがない）
+                    if (!line.StartsWith("  ") && !line.StartsWith("\t") && line.TrimStart().StartsWith("- "))
+                    {
+                        var top = line.Trim();
+                        // match pattern "- {button}押下" または "- {button}押下 →" を含むか、"{button}押下" を部分一致で探す
+                        if (top.Contains($"{buttonKey}押下") || top.StartsWith($"- {buttonKey}押下", StringComparison.Ordinal))
+                        {
+                            parentFound = true;
+                            parentLineIndex = i;
+                            break;
+                        }
+                    }
+                }
+
+                if (parentFound && parentLineIndex >= 0)
+                {
+                    // 親ブロックの終端を見つける（親行の次から、インデント行・空行を含む）
+                    int next = parentLineIndex + 1;
+                    while (next < lines.Count)
+                    {
+                        var l = lines[next];
+                        // 終端条件: 次のトップレベル "- "（先頭にスペースが無い）または次の見出し
+                        if (!string.IsNullOrWhiteSpace(l) && l.TrimStart().StartsWith("- ") && !l.StartsWith("  ") && !l.StartsWith("\t"))
+                            break;
+                        if (l.TrimStart().StartsWith("### ") || l.TrimStart().StartsWith("## ") || l.TrimStart().StartsWith("# "))
+                            break;
+                        next++;
+                    }
+
+                    // next は親ブロック直後のインデックス（挿入位置）
+                    insertionIndex = next;
+
+                    // 各分岐をインサート（2スペースインデント付き）
+                    foreach (var (condition, target) in branches)
+                    {
+                        var cond = (condition ?? string.Empty).Trim();
+                        var tgt = (target ?? string.Empty).Trim();
+                        lines.Insert(insertionIndex, $"  - {cond} → {tgt}");
+                        insertionIndex++;
+                    }
+
+                    lines = NormalizeEmptyLines(lines);
+                    return string.Join(Environment.NewLine, lines);
+                }
+                // 親が見つからなければ以下で新規追加（既存の動作）
             }
             else
             {
@@ -308,12 +363,13 @@ namespace _2vdm_spec_generator.Services
 
                 if (insertionIndex > lines.Count) insertionIndex = lines.Count;
 
-                // 空行と見出しを追加
-                lines.Insert(insertionIndex, string.Empty);
+                if (insertionIndex == lines.Count || !string.IsNullOrWhiteSpace(lines[Math.Max(0, insertionIndex - 1)]))
+                    lines.Insert(insertionIndex, string.Empty);
                 insertionIndex++;
                 lines.Insert(insertionIndex, eventHeading);
                 insertionIndex++;
             }
+
             // メイン行（" - {button}押下 →"）
             lines.Insert(insertionIndex, $"- {buttonName}押下 →");
             insertionIndex++;
@@ -321,18 +377,15 @@ namespace _2vdm_spec_generator.Services
             // 各分岐はスペース + "- " で追加
             foreach (var (condition, target) in branches)
             {
-                // 空白や矢印が混ざっている入力に対する簡単な正規化
                 var cond = (condition ?? string.Empty).Trim();
                 var tgt = (target ?? string.Empty).Trim();
-
-                // 例: "表示部に１が入力されている" と "画面Cへ" のように保存
                 lines.Insert(insertionIndex, $"  - {cond} → {tgt}");
                 insertionIndex++;
             }
 
+            lines = NormalizeEmptyLines(lines);
             return string.Join(Environment.NewLine, lines);
         }
-
 
         /// <summary>
         /// タイムアウト（秒数）と、そのタイムアウト時の遷移先を Markdown に追加または更新する。
@@ -445,6 +498,7 @@ namespace _2vdm_spec_generator.Services
                 }
             }
 
+            lines = NormalizeEmptyLines(lines);
             return string.Join(Environment.NewLine, lines);
         }
 
@@ -515,6 +569,8 @@ namespace _2vdm_spec_generator.Services
             // イベント一覧は常に（この時点でボタン節があれば前にある）置換する
             lines = ReplaceEventSection(lines, eventHeading, BuildEventBlockOrder(elements));
 
+            // 正規化してから書き込み
+            lines = NormalizeEmptyLines(lines);
             File.WriteAllLines(markdownFilePath, lines, Encoding.UTF8);
         }
 
@@ -563,7 +619,6 @@ namespace _2vdm_spec_generator.Services
             if (idx == -1) return lines;
 
             int insertion = idx + 1;
-            // セクション終端を探す：空行または次の見出し（#）が来るまで
             int end = insertion;
             while (end < lines.Count)
             {
@@ -573,13 +628,11 @@ namespace _2vdm_spec_generator.Services
                 end++;
             }
 
-            // 新しいセクションに置換：heading と newItems と 1つ空行を残す
             var newSection = new List<string> { heading };
             foreach (var it in newItems)
                 newSection.Add($"- {it}");
             newSection.Add(string.Empty);
 
-            // 実際の置換
             var result = new List<string>();
             result.AddRange(lines.Take(idx));
             result.AddRange(newSection);
@@ -652,13 +705,11 @@ namespace _2vdm_spec_generator.Services
                     var first = block.First().Trim();
                     // Remove leading "- " and trim
                     var keyCandidate = first.StartsWith("- ") ? first.Substring(2).Trim() : first;
-                    // For matching, use whole first line text as keyCandidate (matching is fuzzy)
                     blocks.Add((keyCandidate, block));
                     cursor = next;
                 }
                 else
                 {
-                    // Unexpected line inside events section — treat as consumed
                     cursor++;
                 }
             }
@@ -714,12 +765,75 @@ namespace _2vdm_spec_generator.Services
                     result.Add(bl);
             }
 
-            // Add a blank line after section (to separate from next heading), only if original  had one
+            // 区切りの単一空行を追加（Normalize で整理される）
             result.Add(string.Empty);
 
             // Append the rest after endOfSectionCursor
             if (endOfSectionCursor < lines.Count)
                 result.AddRange(lines.Skip(endOfSectionCursor));
+
+            return result;
+        }
+
+        // 共通: 空行正規化ヘルパー（連続空行を1つに、先頭/末尾の不要な空行を削除）
+        private static List<string> NormalizeEmptyLines(List<string> lines)
+        {
+            if (lines == null) return new List<string>();
+
+            // find first/last non-blank to trim leading/trailing blanks
+            int first = 0;
+            while (first < lines.Count && string.IsNullOrWhiteSpace(lines[first])) first++;
+            if (first >= lines.Count) return new List<string>();
+
+            int last = lines.Count - 1;
+            while (last >= 0 && string.IsNullOrWhiteSpace(lines[last])) last--;
+            if (last < first) return new List<string>();
+
+            var result = new List<string>();
+            int i = first;
+            while (i <= last)
+            {
+                var line = lines[i];
+                if (!string.IsNullOrWhiteSpace(line))
+                {
+                    result.Add(line);
+                    i++;
+                    continue;
+                }
+
+                // 現在の行は空行。次の非空行を探す
+                int j = i + 1;
+                while (j <= last && string.IsNullOrWhiteSpace(lines[j])) j++;
+
+                if (j > last)
+                {
+                    // 後続の非空行がない（末尾） → 終了
+                    break;
+                }
+
+                // 前後の非空行を取得
+                string prev = result.Count > 0 ? result[^1] : null;
+                string next = lines[j];
+
+                // 判定: 前後がリスト項目（トップレベル/ネストどちらでも）であれば空行を入れない
+                bool prevIsList = prev != null && prev.TrimStart().StartsWith("- ");
+                bool nextIsList = next.TrimStart().StartsWith("- ");
+
+                if (prevIsList && nextIsList)
+                {
+                    // リスト内の項目間なので空行を挿入せずスキップ
+                    i = j;
+                    continue;
+                }
+
+                // それ以外はセクション区切りとして単一の空行を一つだけ入れる
+                result.Add(string.Empty);
+                i = j;
+            }
+
+            // 最後に念のため末尾の空行が残っていたら除去
+            while (result.Count > 0 && string.IsNullOrWhiteSpace(result[^1]))
+                result.RemoveAt(result.Count - 1);
 
             return result;
         }

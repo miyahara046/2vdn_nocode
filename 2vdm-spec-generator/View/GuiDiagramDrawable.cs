@@ -219,12 +219,14 @@ namespace _2vdm_spec_generator.View
 
             if (Elements == null || Elements.Count == 0) return;
 
-            if (!Elements.Any(e => e.X != 0 || e.Y != 0))
-                ArrangeNodes();
+            // 変更点：常に ArrangeNodes() を実行して BranchVisuals を再構築する
+            // 既に位置が設定されている要素については ArrangeNodes() 内の IsUnpositioned 判定で上書きされないため安全
+            ArrangeNodes();
 
+            // 以下は従来の処理（そのまま）
             // positions: Name -> PointF
             var positions = Elements.Where(e => !string.IsNullOrWhiteSpace(e.Name))
-                                    .ToDictionary(e => e.Name, e => new PointF(e.X, e.Y));
+                            .ToDictionary(e => e.Name, e => new PointF(e.X, e.Y));
 
             // normalized map (Trim / remove trailing へ) for fallback lookup
             var normPositions = new Dictionary<string, PointF>(StringComparer.OrdinalIgnoreCase);
