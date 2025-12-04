@@ -243,7 +243,47 @@ namespace _2vdm_spec_generator.View
                     // クリック／選択の通知（ViewModel 側へ）
                     NodeClicked?.Invoke(el);
 
-                    break;
+                    return;
+                }
+            }
+
+            // 既存ノードにヒットしなかった場合、分岐可視ノード（Condition / Target ダイヤ）をチェックして選択可能にする
+            if (_drawable.BranchVisuals != null && _drawable.BranchVisuals.Count > 0)
+            {
+                // Draw と同じ計算式で矩形を作る（GuiDiagramDrawable と整合）
+                float condW = GuiDiagramDrawable.NodeWidth * 0.9f;
+                float condH = GuiDiagramDrawable.NodeHeight * 0.7f;
+                float diamondW = GuiDiagramDrawable.NodeWidth * 0.8f;
+                float diamondH = GuiDiagramDrawable.NodeHeight * 0.8f;
+                float midGap = 24f;
+                float condRightShift = 40f;
+
+                foreach (var bv in _drawable.BranchVisuals)
+                {
+                    // condCenter / targetCenter を再計算
+                    float condCenterX = bv.CenterX - (diamondW / 2f + midGap / 2f + condW / 2f) + condRightShift;
+                    var condCenter = new PointF(condCenterX, bv.CenterY);
+                    var condRect = new RectF(condCenter.X - condW / 2f, condCenter.Y - condH / 2f, condW, condH);
+
+                    float targetCenterX = bv.CenterX + (diamondW / 2f + midGap / 2f);
+                    var targetCenter = new PointF(targetCenterX, bv.CenterY);
+                    // ダイヤは簡易的に矩形でヒット判定（十分な判定精度）
+                    var diamondRect = new RectF(targetCenter.X - diamondW / 2f, targetCenter.Y - diamondH / 2f, diamondW, diamondH);
+
+                    if (condRect.Contains(pointerX, pointerY) || diamondRect.Contains(pointerX, pointerY))
+                    {
+                        var parent = bv.ParentEvent;
+                        if (parent != null)
+                        {
+                            // 選択として扱う（ドラッグは開始しない。親イベントを選択する）
+                            parent.IsSelected = true;
+                            _graphicsView.Invalidate();
+
+                            // ViewModel 側に通知（既存の選択/削除フローを使えるようにする）
+                            NodeClicked?.Invoke(parent);
+                            return;
+                        }
+                    }
                 }
             }
         }

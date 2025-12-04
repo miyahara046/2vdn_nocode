@@ -25,10 +25,10 @@ namespace _2vdm_spec_generator.View
         private const float timeoutStartY = 8f;
         private const float timeoutEventOffset = NodeWidth + 100f;
 
-        // 分岐の可視ノード（描画用）を保持
-        private readonly List<BranchVisual> _branchVisuals = new();
+        // 分岐の可視ノード（描画用）を保持（公開して外部から参照可能にする）
+        public readonly List<BranchVisual> BranchVisuals = new();
 
-        private class BranchVisual
+        public class BranchVisual
         {
             public GuiElement ParentEvent { get; set; }
             public GuiElement Button { get; set; }
@@ -92,7 +92,7 @@ namespace _2vdm_spec_generator.View
             }
 
             // ----- 分岐イベント処理（子イベントをノードとして可視化） -----
-            _branchVisuals.Clear();
+            BranchVisuals.Clear();
             float branchSpacing = 18f; // 見た目で使う間隔（Draw側とも整合）
             var eventsWithBranches = Elements.Where(e => e.Type == GuiElementType.Event && e.Branches != null && e.Branches.Count > 0).ToList();
 
@@ -118,7 +118,7 @@ namespace _2vdm_spec_generator.View
                 int n = evt.Branches.Count;
                 float totalHeight = n * NodeHeight + Math.Max(0, n - 1) * branchSpacing;
 
-                // 基準となる centerY を決める元値（既存ボタン位置またはイベント位置）
+                // 基準 Y を決める元値（既存ボタン位置またはイベント位置）
                 float anchorCenterY = (correspondingButton != null) ? (correspondingButton.Y + NodeHeight / 2f) : (evt.Y + NodeHeight / 2f);
 
                 // まず top を anchorCenterY を中心に算出（後でボタンをブロック中央に合わせる）
@@ -129,7 +129,7 @@ namespace _2vdm_spec_generator.View
                 {
                     var br = evt.Branches[i];
                     float centerY = top + NodeHeight / 2f + i * (NodeHeight + branchSpacing);
-                    _branchVisuals.Add(new BranchVisual
+                    BranchVisuals.Add(new BranchVisual
                     {
                         ParentEvent = evt,
                         Button = correspondingButton,
@@ -292,7 +292,7 @@ namespace _2vdm_spec_generator.View
             // ボタン楕円幅（半分にする）
             float buttonEllipseW = NodeWidth / 2f;
 
-            foreach (var bv in _branchVisuals)
+            foreach (var bv in BranchVisuals)
             {
                 // basePoint（起点）は対応ボタンがあればボタン右中央、なければ親イベント右中央
                 PointF basePoint;
