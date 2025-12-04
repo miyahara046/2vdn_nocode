@@ -25,10 +25,10 @@ namespace _2vdm_spec_generator.View
         private const float timeoutStartY = 8f;
         private const float timeoutEventOffset = NodeWidth + 100f;
 
-        // 分岐の可視ノード（描画用）を保持
-        private readonly List<BranchVisual> _branchVisuals = new();
+        // 分岐の可視ノード（描画用）を保持（公開して外部から参照可能にする）
+        public readonly List<BranchVisual> BranchVisuals = new();
 
-        private class BranchVisual
+        public class BranchVisual
         {
             public GuiElement ParentEvent { get; set; }
             public GuiElement Button { get; set; }
@@ -36,6 +36,7 @@ namespace _2vdm_spec_generator.View
             public string Target { get; set; }
             public float CenterX { get; set; }   // 中央参照点（ダイヤモンド中心の基準）
             public float CenterY { get; set; }
+            public int BranchIndex { get; set; } // 追加：親イベント内での分岐インデックス
         }
 
         public void ArrangeNodes()
@@ -75,6 +76,8 @@ namespace _2vdm_spec_generator.View
                 buttonIndex++;
             }
 
+
+
             // Operation 未配置のものは右端に積む準備（位置は後で分岐に合わせる）
             var opList = Elements.Where(e => e.Type == GuiElementType.Operation).ToList();
 
@@ -91,8 +94,40 @@ namespace _2vdm_spec_generator.View
                 }
             }
 
+            // ----- 単一（非条件）イベントを対応ボタンに常に同期 -----
+            // 条件分岐イベント（Branches を持つもの）は後で別処理するため除外
+            foreach (var evt in Elements.Where(e => e.Type == GuiElementType.Event && (e.Branches == null || e.Branches.Count == 0)))
+            {
+                // タイムアウト紐づけ済みで固定されている場合は上書きしない
+                if (evt.IsFixed && !IsUnpositioned(evt)) continue;
+
+                GuiElement correspondingButton = null;
+
+                if (!string.IsNullOrWhiteSpace(evt.Name))
+                {
+                    var evtNameNorm = evt.Name.Trim();
+                    correspondingButton = buttonList.FirstOrDefault(b =>
+                        !string.IsNullOrWhiteSpace(b.Name) &&
+                        evtNameNorm.StartsWith(b.Name.Trim(), StringComparison.OrdinalIgnoreCase));
+                }
+
+                if (correspondingButton == null && !string.IsNullOrWhiteSpace(evt.Target))
+                {
+                    correspondingButton = buttonList.FirstOrDefault(b => !string.IsNullOrWhiteSpace(b.Target) && string.Equals(b.Target.Trim(), evt.Target.Trim(), StringComparison.OrdinalIgnoreCase));
+                }
+
+                if (correspondingButton != null)
+                {
+                    // 常に同期：ボタンの Y に合わせ、イベントを中間列に寄せて固定する
+                    evt.X = midColumnX;
+                    evt.Y = correspondingButton.Y;
+                    evt.IsFixed = true;
+                }
+            }
+            // ---------------------------------------------------------------------
+
             // ----- 分岐イベント処理（子イベントをノードとして可視化） -----
-            _branchVisuals.Clear();
+            BranchVisuals.Clear();
             float branchSpacing = 18f; // 見た目で使う間隔（Draw側とも整合）
             var eventsWithBranches = Elements.Where(e => e.Type == GuiElementType.Event && e.Branches != null && e.Branches.Count > 0).ToList();
 
@@ -118,7 +153,7 @@ namespace _2vdm_spec_generator.View
                 int n = evt.Branches.Count;
                 float totalHeight = n * NodeHeight + Math.Max(0, n - 1) * branchSpacing;
 
-                // 基準となる centerY を決める元値（既存ボタン位置またはイベント位置）
+                // 基準 Y を決める元値（既存ボタン位置またはイベント位置）
                 float anchorCenterY = (correspondingButton != null) ? (correspondingButton.Y + NodeHeight / 2f) : (evt.Y + NodeHeight / 2f);
 
                 // まず top を anchorCenterY を中心に算出（後でボタンをブロック中央に合わせる）
@@ -129,14 +164,15 @@ namespace _2vdm_spec_generator.View
                 {
                     var br = evt.Branches[i];
                     float centerY = top + NodeHeight / 2f + i * (NodeHeight + branchSpacing);
-                    _branchVisuals.Add(new BranchVisual
+                    BranchVisuals.Add(new BranchVisual
                     {
                         ParentEvent = evt,
                         Button = correspondingButton,
                         Condition = br.Condition,
                         Target = br.Target,
                         CenterX = centerReferenceX,
-                        CenterY = centerY
+                        CenterY = centerY,
+                        BranchIndex = i // ここで index を保持
                     });
 
                     // Branch に対応する Operation を右端に配置する（存在すれば Y をこの子ノード中心に合わせる）
@@ -217,12 +253,13 @@ namespace _2vdm_spec_generator.View
 
             if (Elements == null || Elements.Count == 0) return;
 
-            if (!Elements.Any(e => e.X != 0 || e.Y != 0))
-                ArrangeNodes();
+            // 変更点：常に ArrangeNodes() を実行して BranchVisuals を再構築する
+            // 既に位置が設定されている要素については ArrangeNodes() 内の IsUnpositioned 判定で上書きされないため安全
+            ArrangeNodes();
 
             // positions: Name -> PointF
             var positions = Elements.Where(e => !string.IsNullOrWhiteSpace(e.Name))
-                                    .ToDictionary(e => e.Name, e => new PointF(e.X, e.Y));
+                            .ToDictionary(e => e.Name, e => new PointF(e.X, e.Y));
 
             // normalized map (Trim / remove trailing へ) for fallback lookup
             var normPositions = new Dictionary<string, PointF>(StringComparer.OrdinalIgnoreCase);
@@ -258,7 +295,20 @@ namespace _2vdm_spec_generator.View
                 if (TryResolvePosition(el.Name, positions, normPositions, out var f) &&
                     TryResolvePosition(el.Target, positions, normPositions, out var t))
                 {
-                    var s = new PointF(f.X + NodeWidth, f.Y + NodeHeight / 2f);
+                    // 修正: ボタンから始まる線は楕円の右端を起点にする
+                    PointF s;
+                    if (el.Type == GuiElementType.Button)
+                    {
+                        // ボタンは楕円で描画しており、見た目上の右端は矩形右端より内側にある。
+                        float buttonEllipseWi = NodeWidth / 2f;
+                        float ellipseRight = f.X + (NodeWidth + buttonEllipseWi) / 2f;
+                        s = new PointF(ellipseRight, f.Y + NodeHeight / 2f);
+                    }
+                    else
+                    {
+                        s = new PointF(f.X + NodeWidth, f.Y + NodeHeight / 2f);
+                    }
+
                     var eP = new PointF(t.X, t.Y + NodeHeight / 2f);
                     canvas.DrawLine(s, eP);
                     DrawArrow(canvas, s, eP);
@@ -269,8 +319,9 @@ namespace _2vdm_spec_generator.View
             // 条件矩形サイズ / ひし形サイズ
             float condW = NodeWidth * 0.9f;
             float condH = NodeHeight * 0.7f;
+            // 変更：ひし形幅を狭めて縦長に近づける（横幅が広すぎる問題を修正）
             float diamondW = NodeWidth * 0.8f;
-            float diamondH = NodeHeight * 0.8f;
+            float diamondH = NodeHeight * 0.7f;
             // condition と target 間の水平ギャップ
             float midGap = 24f;
             // 条件矩形を右に寄せる微調整（要求により右へ）
@@ -279,13 +330,13 @@ namespace _2vdm_spec_generator.View
             // ボタン楕円幅（半分にする）
             float buttonEllipseW = NodeWidth / 2f;
 
-            foreach (var bv in _branchVisuals)
+            foreach (var bv in BranchVisuals)
             {
                 // basePoint（起点）は対応ボタンがあればボタン右中央、なければ親イベント右中央
                 PointF basePoint;
                 if (bv.Button != null)
                 {
-                    // 楕円はボタン矩形内で中央寄せして描画しているので右端を計算する
+                    // 楕円はボタン矩形内で中央寄せして描画しており、右端を計算する
                     float ellipseRight = bv.Button.X + (NodeWidth + buttonEllipseW) / 2f;
                     basePoint = new PointF(ellipseRight, bv.Button.Y + NodeHeight / 2f);
                 }

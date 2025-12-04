@@ -12,6 +12,7 @@ using System.Threading.Tasks;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 
 namespace _2vdm_spec_generator.ViewModel
 {
@@ -750,32 +751,76 @@ namespace _2vdm_spec_generator.ViewModel
             if (el == null) return;
             if (SelectedItem == null || string.IsNullOrWhiteSpace(SelectedItem.FullPath)) return;
 
+            // 分岐が選択されている場合は分岐単体の削除フローに入る
+            if (SelectedBranchIndex.HasValue && el.Branches != null && SelectedBranchIndex.Value >= 0 && SelectedBranchIndex.Value < el.Branches.Count)
+            {
+                var branch = el.Branches[SelectedBranchIndex.Value];
+                string branchLabel = string.IsNullOrWhiteSpace(branch.Condition) ? branch.Target ?? "(未指定)" : $"{branch.Condition} -> {branch.Target}";
+                bool okBranch = await Shell.Current.DisplayAlert("分岐削除確認", $"この分岐 \"{branchLabel}\" を削除しますか？", "はい", "いいえ");
+                if (!okBranch) return;
+
+                var mdPath = SelectedItem.FullPath;
+                try
+                {
+                    string currentMarkdown = File.Exists(mdPath) ? File.ReadAllText(mdPath) : string.Empty;
+                    string newMarkdown = RemoveBranchFromMarkdown(currentMarkdown, el, SelectedBranchIndex.Value);
+
+                    File.WriteAllText(mdPath, newMarkdown);
+
+                    // VDM++ 再生成
+                    var converter = new MarkdownToVdmConverter();
+                    var newVdm = converter.ConvertToVdm(newMarkdown);
+                    File.WriteAllText(Path.ChangeExtension(mdPath, ".vdmpp"), newVdm);
+
+                    // positions.json の更新（親イベント自体は残るので positions は基本的に変わらないが安全のため再書込）
+                    RemovePositionEntry(mdPath, el.Name);
+
+                    // ViewModel のプロパティを更新して UI を再構築
+                    MarkdownContent = newMarkdown;
+                    VdmContent = newVdm;
+
+                    // 再解析して GuiElements を更新
+                    LoadMarkdownAndVdm(mdPath);
+
+                    // 選択解除
+                    SelectedBranchIndex = null;
+                    SelectedGuiElement = null;
+                }
+                catch
+                {
+                    await Application.Current.MainPage.DisplayAlert("エラー", "分岐削除に失敗しました。", "OK");
+                }
+
+                return;
+            }
+
+            // 既存の要素削除フロー（要素全体を削除）
             bool ok = await Shell.Current.DisplayAlert("削除確認", $"\"{el.Name}\" をこのファイルから削除しますか？", "はい", "いいえ");
             if (!ok) return;
 
-            var mdPath = SelectedItem.FullPath;
+            var mdPathFull = SelectedItem.FullPath;
             try
             {
                 // Markdown 編集
-                string currentMarkdown = File.Exists(mdPath) ? File.ReadAllText(mdPath) : string.Empty;
+                string currentMarkdown = File.Exists(mdPathFull) ? File.ReadAllText(mdPathFull) : string.Empty;
                 string newMarkdown = RemoveElementFromMarkdown(currentMarkdown, el);
 
-                File.WriteAllText(mdPath, newMarkdown);
+                File.WriteAllText(mdPathFull, newMarkdown);
 
                 // VDM++ 再生成
                 var converter = new MarkdownToVdmConverter();
                 var newVdm = converter.ConvertToVdm(newMarkdown);
-                File.WriteAllText(Path.ChangeExtension(mdPath, ".vdmpp"), newVdm);
+                File.WriteAllText(Path.ChangeExtension(mdPathFull, ".vdmpp"), newVdm);
 
                 // positions.json から削除（存在する場合）
-                RemovePositionEntry(mdPath, el.Name);
+                RemovePositionEntry(mdPathFull, el.Name);
 
                 // ViewModel のプロパティを更新して UI を再構築
                 MarkdownContent = newMarkdown;
                 VdmContent = newVdm;
 
                 // 再解析して GuiElements を更新
-                LoadMarkdownAndVdm(mdPath);
+                LoadMarkdownAndVdm(mdPathFull);
 
                 // 選択解除
                 SelectedGuiElement = null;
@@ -895,13 +940,111 @@ namespace _2vdm_spec_generator.ViewModel
             }
         }
 
+        // 分岐を Markdown から削除する簡易実装
+        private string RemoveBranchFromMarkdown(string markdown, GuiElement parentEvent, int branchIndex)
+        {
+            if (markdown == null) markdown = string.Empty;
+            if (parentEvent == null || parentEvent.Branches == null || branchIndex < 0 || branchIndex >= parentEvent.Branches.Count) return markdown;
+
+            var branch = parentEvent.Branches[branchIndex];
+            var lines = markdown.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).ToList();
+
+            // 親イベントブロックの開始行を探す（例: "- {button}押下" を含む行）
+            int start = lines.FindIndex(l => l.TrimStart().StartsWith("- ") && l.Contains((parentEvent.Name ?? "").Trim()) && l.Contains("押下"));
+            if (start == -1) return markdown;
+
+            // ブロックの終端を探す
+            int j = start + 1;
+            while (j < lines.Count)
+            {
+                if (string.IsNullOrWhiteSpace(lines[j])) { j++; continue; }
+                var t = lines[j].TrimStart();
+                if (t.StartsWith("- ") && !lines[j].StartsWith("  ")) break;
+                if (t.StartsWith("#")) break;
+                j++;
+            }
+
+            // ブロック内で該当する分岐行を探して削除（条件またはターゲットを含む行）
+            int removeIndex = -1;
+            for (int k = start + 1; k < j; k++)
+            {
+                var trimmed = lines[k].Trim();
+                if (string.IsNullOrWhiteSpace(trimmed)) continue;
+                // 分岐行っぽいインデントを持つ行を対象にする
+                if (lines[k].StartsWith("  -") || lines[k].StartsWith("-") || lines[k].StartsWith("　-"))
+                {
+                    // マッチ条件：Condition または Target が含まれている
+                    var cond = (branch.Condition ?? "").Trim();
+                    var targ = (branch.Target ?? "").Trim();
+                    if ((!string.IsNullOrEmpty(cond) && trimmed.IndexOf(cond, StringComparison.OrdinalIgnoreCase) >= 0) ||
+                        (!string.IsNullOrEmpty(targ) && trimmed.IndexOf(targ, StringComparison.OrdinalIgnoreCase) >= 0))
+                    {
+                        removeIndex = k;
+                        break;
+                    }
+                }
+            }
+
+            // 見つからなければブロック内で "-> Target" によるマッチも試す
+            if (removeIndex == -1 && !string.IsNullOrWhiteSpace(branch.Target))
+            {
+                for (int k = start + 1; k < j; k++)
+                {
+                    var trimmed = lines[k].Trim();
+                    if (trimmed.IndexOf(branch.Target.Trim(), StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        removeIndex = k;
+                        break;
+                    }
+                }
+            }
+
+            if (removeIndex == -1) return markdown;
+
+            lines.RemoveAt(removeIndex);
+
+            // ブロック内に分岐行が残っていない場合は親イベントヘッダも削除する（要件に応じて）
+            bool anyBranchLeft = false;
+            for (int k = start + 1; k < j; k++)
+            {
+                if (k >= lines.Count) break;
+                var t = lines[k].TrimStart();
+                if (string.IsNullOrWhiteSpace(t)) continue;
+                if (t.StartsWith("- ") && lines[k].StartsWith("  ")) { anyBranchLeft = true; break; }
+            }
+
+            if (!anyBranchLeft)
+            {
+                // 親行を削除（ブロック全体を除去）
+                // 再計算：親イベント行の現在インデックスを検索（remove により位置がずれている可能性があるため名前で再検索）
+                int parentLine = lines.FindIndex(l => l.TrimStart().StartsWith("- ") && l.Contains((parentEvent.Name ?? "").Trim()) && l.Contains("押下"));
+                if (parentLine >= 0)
+                {
+                    // 親行を削除
+                    lines.RemoveAt(parentLine);
+
+                    // その後続く空行もクリーニング
+                    while (parentLine < lines.Count && string.IsNullOrWhiteSpace(lines[parentLine]))
+                        lines.RemoveAt(parentLine);
+                }
+            }
+
+            return string.Join(Environment.NewLine, lines);
+        }
+
         partial void OnSelectedGuiElementChanged(GuiElement value)
         {
             // GuiElements 内の IsSelected を一意に保つ例（既存コードと整合）
             if (GuiElements == null) return;
             foreach (var g in GuiElements)
                 g.IsSelected = ReferenceEquals(g, value);
+
+            // 要素が切り替わったら分岐選択は解除する（新たに分岐タップでセットされる想定）
+            SelectedBranchIndex = null;
         }
+
+        // 追加：選択された分岐インデックス（null のときは分岐未選択）
+        [ObservableProperty] private int? selectedBranchIndex;
     }
 
     /// <summary>
@@ -918,6 +1061,14 @@ namespace _2vdm_spec_generator.ViewModel
         // OnMarkdownContentChanged の最後に LoadGuiPositionsToElements を呼ぶようにしてください
        
     }
+
+
+
+
+
+
+
+
 
 
 

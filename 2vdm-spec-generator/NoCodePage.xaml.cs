@@ -56,12 +56,23 @@ namespace _2vdm_spec_generator
                     });
                 };
 
-                // 追加: ノードクリック時に ViewModel の SelectedGuiElement にセット
+                // 既存：ノード選択時は SelectedGuiElement を設定
                 _diagramRenderer.NodeClicked = el =>
                 {
                     MainThread.BeginInvokeOnMainThread(() =>
                     {
                         vm.SelectedGuiElement = el;
+                        vm.SelectedBranchIndex = null; // ノードクリックなら分岐選択は解除
+                    });
+                };
+
+                // 追加：分岐がタップされたときに親イベントと分岐インデックスを受け取る
+                _diagramRenderer.BranchClicked = (parent, index) =>
+                {
+                    MainThread.BeginInvokeOnMainThread(() =>
+                    {
+                        vm.SelectedGuiElement = parent;
+                        vm.SelectedBranchIndex = index;
                     });
                 };
             }

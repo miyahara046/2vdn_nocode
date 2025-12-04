@@ -9,7 +9,6 @@
              Title="NoCode">
 
     <ContentPage.Resources>
-        <!-- インデント用コンバーター -->
         <ResourceDictionary>
             <vm:LevelToIndentConverter x:Key="LevelToIndentConverter"/>
             <vm:BoolToExpandCollapseConverter x:Key="BoolToExpandCollapseConverter"/>
@@ -18,7 +17,6 @@
         </ResourceDictionary>
     </ContentPage.Resources>
 
-    <!-- メニューバー -->
     <ContentPage.MenuBarItems>
         <MenuBarItem Text="ファイル">
             <MenuFlyoutItem Text="フォルダを選択" Command="{Binding SelectFolderCommand}"/>
@@ -55,13 +53,13 @@
 
                             <!-- フォルダ折りたたみラベル -->
                             <Label Text="{Binding IsExpanded, Converter={StaticResource BoolToExpandCollapseConverter}}"
-                                    IsVisible="{Binding IsFolder}"
-                                    FontSize="15"
-                                    VerticalOptions="Center"
+                                   IsVisible="{Binding IsFolder}"
+                                   FontSize="15"
+                                   VerticalOptions="Center"
                                        TextColor="Black">
                                 <Label.GestureRecognizers>
                                     <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type vm:NoCodePageViewModel}}, Path=ToggleExpandCommand}"
-                                              CommandParameter="{Binding}" />
+                                                          CommandParameter="{Binding}" />
                                 </Label.GestureRecognizers>
                             </Label>
 
@@ -72,7 +70,7 @@
                                    BackgroundColor="{Binding ., Converter={StaticResource SelectedToColorConverter}, ConverterParameter={x:Reference Page}}">
                                 <Label.GestureRecognizers>
                                     <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type vm:NoCodePageViewModel}}, Path=SelectItemCommand}"
-                                              CommandParameter="{Binding}" />
+                                                          CommandParameter="{Binding}" />
                                 </Label.GestureRecognizers>
                             </Label>
 
@@ -85,18 +83,15 @@
 
         <!-- 中央：GUI表示（ダイアグラム） -->
         <Border Grid.Row="1" Grid.Column="1" Stroke="Gray" StrokeThickness="1" Padding="10" Margin="5">
-            <Grid RowDefinitions="Auto, * ">
-
+            <Grid RowDefinitions="Auto,*">
                 <Label Text="Condition Transition Map" FontSize="16" FontAttributes="Bold" Margin="0,0,0,5"/>
 
-                <ScrollView Grid.Row="1"  
-             VerticalOptions="FillAndExpand" 
-             HorizontalOptions="FillAndExpand">
-
+                <!-- 外側の ScrollView を復活させ、Renderer は内部で ScrollView を持たない前提 -->
+                <ScrollView Grid.Row="1" VerticalOptions="FillAndExpand" HorizontalOptions="FillAndExpand">
                     <ContentView x:Name="DiagramContainer"
-                 BackgroundColor="WhiteSmoke"
-                 VerticalOptions="StartAndExpand"
-                 HorizontalOptions="FillAndExpand"/>
+                                 BackgroundColor="WhiteSmoke"
+                                 VerticalOptions="FillAndExpand"
+                                 HorizontalOptions="FillAndExpand"/>
                 </ScrollView>
             </Grid>
         </Border>
@@ -104,10 +99,15 @@
 
         <!-- 右側：VDM++ 表示 -->
         <Border Grid.Row="1" Grid.Column="2" Stroke="Gray" StrokeThickness="1" Padding="10" Margin="5">
-            <VerticalStackLayout>
+            <Grid RowDefinitions="Auto,*">
                 <Label Text="VDM++" FontSize="16" FontAttributes="Bold" Margin="0,0,0,5"/>
-                <Editor Text="{Binding VdmContent}" AutoSize="TextChanges" VerticalOptions="FillAndExpand" IsReadOnly="True"/>
-            </VerticalStackLayout>
+                <Editor Grid.Row="1"
+                        Text="{Binding VdmContent}"
+                        VerticalOptions="FillAndExpand"
+                        HorizontalOptions="FillAndExpand"
+                        IsReadOnly="True"
+                        Margin="0"/>
+            </Grid>
         </Border>
     </Grid>
 </ContentPage>
