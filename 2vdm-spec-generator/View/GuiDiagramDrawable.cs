@@ -36,6 +36,7 @@ namespace _2vdm_spec_generator.View
             public string Target { get; set; }
             public float CenterX { get; set; }   // 中央参照点（ダイヤモンド中心の基準）
             public float CenterY { get; set; }
+            public int BranchIndex { get; set; } // 追加：親イベント内での分岐インデックス
         }
 
         public void ArrangeNodes()
@@ -136,7 +137,8 @@ namespace _2vdm_spec_generator.View
                         Condition = br.Condition,
                         Target = br.Target,
                         CenterX = centerReferenceX,
-                        CenterY = centerY
+                        CenterY = centerY,
+                        BranchIndex = i // ここで index を保持
                     });
 
                     // Branch に対応する Operation を右端に配置する（存在すれば Y をこの子ノード中心に合わせる）
@@ -282,8 +284,9 @@ namespace _2vdm_spec_generator.View
             // 条件矩形サイズ / ひし形サイズ
             float condW = NodeWidth * 0.9f;
             float condH = NodeHeight * 0.7f;
+            // 変更：ひし形幅を狭めて縦長に近づける（横幅が広すぎる問題を修正）
             float diamondW = NodeWidth * 0.8f;
-            float diamondH = NodeHeight * 0.8f;
+            float diamondH = NodeHeight * 0.5f; // 少し縦長に（視認性優先）
             // condition と target 間の水平ギャップ
             float midGap = 24f;
             // 条件矩形を右に寄せる微調整（要求により右へ）

@@ -41,6 +41,9 @@ namespace _2vdm_spec_generator.View
         // ノードがクリックされたことを通知するコールバック
         public Action<GuiElement> NodeClicked { get; set; }
 
+        // 追加：分岐がタップされたときに親イベントと分岐インデックスを渡すコールバック
+        public Action<GuiElement, int?> BranchClicked { get; set; }
+
         // 外部から要素リストをセットし、描画を更新するメソッド
         public void SetElements(IEnumerable<GuiElement> elements)
         {
@@ -279,8 +282,9 @@ namespace _2vdm_spec_generator.View
                             parent.IsSelected = true;
                             _graphicsView.Invalidate();
 
-                            // ViewModel 側に通知（既存の選択/削除フローを使えるようにする）
+                            // ViewModel 側に通知（親イベントと分岐インデックスを渡す）
                             NodeClicked?.Invoke(parent);
+                            BranchClicked?.Invoke(parent, bv.BranchIndex);
                             return;
                         }
                     }
