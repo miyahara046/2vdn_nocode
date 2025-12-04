@@ -1,5 +1,7 @@
 ﻿using System;
 using System.ComponentModel;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace _2vdm_spec_generator.ViewModel
 {
@@ -53,6 +55,38 @@ namespace _2vdm_spec_generator.ViewModel
         // ==== 固定ノード（Timeout 固定） ====
         // 例えば Timeout イベントのように、ユーザーが動かせない固定ノードかどうかのフラグ
         public bool IsFixed { get; set; } = false;
+
+        // 分岐（条件分岐）を表す構造
+        public class EventBranch
+        {
+            public string Condition { get; set; }
+            public string Target { get; set; }
+        }
+
+        private List<EventBranch> _branches = new List<EventBranch>();
+
+        /// <summary>
+        /// 条件分岐を持つイベントの場合、各分岐を保持する。
+        /// - 非条件イベントでは空リスト。
+        /// </summary>
+        public List<EventBranch> Branches
+        {
+            get => _branches;
+            set
+            {
+                if (!ReferenceEquals(_branches, value))
+                {
+                    _branches = value ?? new List<EventBranch>();
+                    OnPropertyChanged(nameof(Branches));
+                    OnPropertyChanged(nameof(IsConditional));
+                }
+            }
+        }
+
+        /// <summary>
+        /// Branches が1つ以上あるかどうか（条件分岐イベント判定用）
+        /// </summary>
+        public bool IsConditional => Branches != null && Branches.Any();
 
         // プロパティ値が変更されたことを UI に通知するためのイベント
         public event PropertyChangedEventHandler PropertyChanged;
