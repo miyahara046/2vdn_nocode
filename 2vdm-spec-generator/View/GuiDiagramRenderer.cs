@@ -4,6 +4,7 @@ using System;
 using System.Linq;
 using System.Collections.Generic;
 using _2vdm_spec_generator.ViewModel;
+using Microsoft.Maui.ApplicationModel; // MainThread
 
 #if WINDOWS
 using Microsoft.UI.Xaml;
@@ -52,16 +53,14 @@ namespace _2vdm_spec_generator.View
             // 自動配置を行う
             _drawable.ArrangeNodes();
             // GraphicsView を再描画するよう要求する
-            _graphicsView.Invalidate();
+            _graphicsView?.Invalidate();
         }
 
-        // コンストラクタ：Drawable / GraphicsView / ScrollView を初期化する
+        // コンストラクタ：Drawable / GraphicsView を初期化し、外側の ScrollView がある想定で GraphicsView を直接 Content に設定します
         public GuiDiagramRenderer()
         {
-            // 描画ロジックインスタンスを生成
             _drawable = new GuiDiagramDrawable();
 
-            // GraphicsView を生成し Drawable を割り当てる
             _graphicsView = new GraphicsView
             {
                 Drawable = _drawable,
@@ -69,28 +68,16 @@ namespace _2vdm_spec_generator.View
                 InputTransparent = false
             };
 
-            // GraphicsView を内包する ScrollView を生成
-            _scrollView = new ScrollView
-            {
-                Orientation = ScrollOrientation.Both,
-                Content = _graphicsView,
-                HorizontalScrollBarVisibility = ScrollBarVisibility.Always,
-                VerticalScrollBarVisibility = ScrollBarVisibility.Always
-            };
+            // 重要: 内部で ScrollView を作らない（親の XAML ScrollView に委ねる）
+            Content = _graphicsView;
 
-            // ContentView に ScrollView をセットする
-            Content = _scrollView;
-
-            // ハンドラー変更イベントを監視してプラットフォーム固有の入力をフックする
+            // GraphicsView のハンドラー変更イベントを監視してプラットフォーム固有の入力をフックする
             _graphicsView.HandlerChanged += GraphicsView_HandlerChanged;
 
 #if !WINDOWS
-            // 非 Windows では PanGesture でドラッグを扱う
             var pan = new PanGestureRecognizer();
             pan.PanUpdated += NonWindows_PanUpdated;
             _graphicsView.GestureRecognizers.Add(pan);
-
-            // 補足：TapGesture で選択のみでも良いが位置情報が取れないため Pan を兼用している
 #endif
         }
 
@@ -104,6 +91,7 @@ namespace _2vdm_spec_generator.View
                 oldEl.PointerPressed -= Platform_PointerPressed;
                 oldEl.PointerMoved -= Platform_PointerMoved;
                 oldEl.PointerReleased -= Platform_PointerReleased;
+                oldEl.PointerWheelChanged -= Platform_PointerWheelChanged; // 追加：解除
             }
 
             // 新しいハンドラーがある場合はプラットフォームのポインタイベントを登録する
@@ -112,6 +100,7 @@ namespace _2vdm_spec_generator.View
                 el.PointerPressed += Platform_PointerPressed;
                 el.PointerMoved += Platform_PointerMoved;
                 el.PointerReleased += Platform_PointerReleased;
+                el.PointerWheelChanged += Platform_PointerWheelChanged; // 追加：登録
             }
 #endif
         }
@@ -146,6 +135,41 @@ namespace _2vdm_spec_generator.View
                 FinishDrag(_draggedNode);
             }
         }
+
+        // Windows 向け：マウスホイール処理を親の ScrollView に渡す
+        private void Platform_PointerWheelChanged(object sender, PointerRoutedEventArgs e)
+        {
+            try
+            {
+                if (_scrollView == null) return;
+                if (!(sender is UIElement ui)) return;
+
+                var pt = e.GetCurrentPoint(ui);
+                // MouseWheelDelta は通常 ±120 / notch
+                int delta = pt.Properties.MouseWheelDelta;
+
+                // 方向は環境によるが ScrollToAsync は Y 座標増加で下方向スクロールになるため符号を反転
+                double scrollDelta = -delta / 3.0; // 感度調整: 必要なら調整して下さい
+
+                // UI スレッドで実行
+                MainThread.BeginInvokeOnMainThread(async () =>
+                {
+                    try
+                    {
+                        double newY = Math.Max(0.0, _scrollView.ScrollY + scrollDelta);
+                        await _scrollView.ScrollToAsync(_scrollView.ScrollX, newY, false);
+                    }
+                    catch
+                    {
+                        // ignore
+                    }
+                });
+            }
+            catch
+            {
+                // 無視
+            }
+        }
 #endif
 
 #if !WINDOWS
@@ -169,7 +193,7 @@ namespace _2vdm_spec_generator.View
                         // 選択として通知（タップと同等の選択通知）
                         _panTarget.IsSelected = true;
                         NodeClicked?.Invoke(_panTarget);
-                        _graphicsView.Invalidate();
+                        _graphicsView?.Invalidate();
                     }
                     break;
 
@@ -180,7 +204,7 @@ namespace _2vdm_spec_generator.View
                         var newY = _panStartOriginalPos.Value.Y + (float)e.TotalY;
                         _panTarget.Y = newY;
                         ApplyFixedX(_panTarget);
-                        _graphicsView.Invalidate();
+                        _graphicsView?.Invalidate();
                     }
                     break;
 
@@ -241,7 +265,7 @@ namespace _2vdm_spec_generator.View
 
                     // 選択状態をセットして再描画を要求する
                     el.IsSelected = true;
-                    _graphicsView.Invalidate();
+                    _graphicsView?.Invalidate();
 
                     // クリック／選択の通知（ViewModel 側へ）
                     NodeClicked?.Invoke(el);
@@ -280,7 +304,7 @@ namespace _2vdm_spec_generator.View
                         {
                             // 選択として扱う（ドラッグは開始しない。親イベントを選択する）
                             parent.IsSelected = true;
-                            _graphicsView.Invalidate();
+                            _graphicsView?.Invalidate();
 
                             // ViewModel 側に通知（親イベントと分岐インデックスを渡す）
                             NodeClicked?.Invoke(parent);
@@ -305,7 +329,7 @@ namespace _2vdm_spec_generator.View
             ApplyFixedX(_draggedNode);
 
             // 再描画を要求する
-            _graphicsView.Invalidate();
+            _graphicsView?.Invalidate();
         }
 
         // ドラッグ終了処理：スナップ、再配置、通知を行う
@@ -328,7 +352,7 @@ namespace _2vdm_spec_generator.View
             PositionsChanged?.Invoke(_drawable.Elements);
 
             // 再描画を要求する
-            _graphicsView.Invalidate();
+            _graphicsView?.Invalidate();
 
             // 内部のドラッグ状態をクリアする
             _draggedNode = null;
@@ -436,5 +460,33 @@ namespace _2vdm_spec_generator.View
 
         // 現在のドラッグを外部から強制終了するヘルパー
         public void FinishCurrentDrag() => FinishDrag(_draggedNode);
+
+#if WINDOWS
+        // ファイル内に次のメソッドを追加してください：
+        private void ScrollView_HandlerChanged(object sender, EventArgs e)
+        {
+            // プラットフォームの古いハンドラがあれば解除
+            if (_scrollView.Handler?.PlatformView is UIElement oldSv)
+            {
+                oldSv.PointerWheelChanged -= ScrollViewer_PointerWheelChanged;
+            }
+
+            // 新しいプラットフォーム View が来たら登録
+            if (_scrollView.Handler?.PlatformView is UIElement newSv)
+            {
+                newSv.PointerWheelChanged += ScrollViewer_PointerWheelChanged;
+            }
+        }
+
+        // ScrollView 側のホイールイベント。既定のスクロールを妨げないよう e.Handled を操作しないか false に設定します。
+        // ここでは何もしない（必要ならログを追加）。
+        private void ScrollViewer_PointerWheelChanged(object sender, PointerRoutedEventArgs e)
+        {
+            // 何もしない -> ネイティブのスクロール処理が動くはず
+            // デバッグ確認用:
+            // System.Diagnostics.Debug.WriteLine("ScrollViewer PointerWheel: " + e.GetCurrentPoint((UIElement)sender).Properties.MouseWheelDelta);
+            // 明示的に伝搬させたいなら e.Handled = false;
+        }
+#endif
     }
 }

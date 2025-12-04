@@ -102,12 +102,19 @@
         </Border>
 
 
-        <!-- 右側：VDM++ 表示 -->
+        <!-- 右側：VDM++ 表示（修正） -->
         <Border Grid.Row="1" Grid.Column="2" Stroke="Gray" StrokeThickness="1" Padding="10" Margin="5">
-            <VerticalStackLayout>
+            <Grid RowDefinitions="Auto,*">
                 <Label Text="VDM++" FontSize="16" FontAttributes="Bold" Margin="0,0,0,5"/>
-                <Editor Text="{Binding VdmContent}" AutoSize="TextChanges" VerticalOptions="FillAndExpand" IsReadOnly="True"/>
-            </VerticalStackLayout>
+
+                <!-- AutoSize を削除し、Editor 自身でスクロールさせる -->
+                <Editor Grid.Row="1"
+                        Text="{Binding VdmContent}"
+                        VerticalOptions="FillAndExpand"
+                        HorizontalOptions="FillAndExpand"
+                        IsReadOnly="True"
+                        Margin="0"/>
+            </Grid>
         </Border>
     </Grid>
 </ContentPage>

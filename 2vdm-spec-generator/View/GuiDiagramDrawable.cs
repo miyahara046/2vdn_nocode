@@ -288,7 +288,7 @@ namespace _2vdm_spec_generator.View
             float condH = NodeHeight * 0.7f;
             // 変更：ひし形幅を狭めて縦長に近づける（横幅が広すぎる問題を修正）
             float diamondW = NodeWidth * 0.8f;
-            float diamondH = NodeHeight * 0.5f; // 少し縦長に（視認性優先）
+            float diamondH = NodeHeight * 0.7f; // 少し縦長に（視認性優先）
             // condition と target 間の水平ギャップ
             float midGap = 24f;
             // 条件矩形を右に寄せる微調整（要求により右へ）
