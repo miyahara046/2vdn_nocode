@@ -23,7 +23,7 @@ namespace _2vdm_spec_generator.View
         private PointF _dragOffset;
 
         private const float SnapSize = 50f;
-        private const float LeftColumnX = 40f;
+        private const float LeftColumnX = 20f;
         private const float RightColumnX = 350f;
 
         public Action<IEnumerable<GuiElement>> PositionsChanged { get; set; }

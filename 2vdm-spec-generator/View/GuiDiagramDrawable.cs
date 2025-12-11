@@ -14,19 +14,24 @@ namespace _2vdm_spec_generator.View
         public List<GuiElement> Elements { get; set; } = new();
 
         public const float NodeWidth = 160f;
-        public const float NodeHeight = 50f;
+        // 変更: ノード高さを5小さく（50f -> 45f）
+        public const float NodeHeight = 45f;
 
         // タイムアウト楕円幅（矩形幅より狭める）
         private const float TimeoutEllipseWidth = NodeWidth * 0.7f;
 
         // レイアウト
         private const float spacing = 80f;
-        private const float leftColumnX = 80f;
+        private const float leftColumnX = 40f;
         private const float midColumnX = leftColumnX + NodeWidth + 40f; // 分岐ハンドル／イベント中継用
         private const float opColumnX = 520f; // 操作（Operation）を並べる右端列
         private const float timeoutStartX = leftColumnX;
         private const float timeoutStartY = 8f;
         private const float timeoutEventOffset = NodeWidth + 120f;
+
+        // 追加: 分岐ブロックの中央（Target/Condition の基準）の水平オフセット量
+        // この値を大きくすると Target（長方形）が右へ移動します
+        private const float branchCenterOffset = 120f;
 
         // 分岐の可視ノード（描画用）を保持（公開して外部から参照可能にする）
         public readonly List<BranchVisual> BranchVisuals = new();
@@ -161,7 +166,8 @@ namespace _2vdm_spec_generator.View
 
                 // まず top を anchorCenterY を中心に算出（後でボタンをブロック中央に合わせる）
                 float top = anchorCenterY - totalHeight / 2f;
-                float centerReferenceX = midColumnX + NodeWidth / 2f; // 中間列の中心基準
+                // 変更: ブランチ中央 X をオフセットで右にずらす（Target を右へ寄せる）
+                float centerReferenceX = midColumnX + branchCenterOffset;
 
                 for (int i = 0; i < n; i++)
                 {
@@ -361,7 +367,7 @@ namespace _2vdm_spec_generator.View
             // condition と target 間の水平ギャップ（若干拡大）
             float midGap = 20f;
             // 条件ダイヤモンドを右に寄せる微調整（見た目の調整用）
-            float condRightShift = 70f;
+            float condRightShift = 80f;
 
             // ボタン楕円幅（半分にする）
             float buttonEllipseW = NodeWidth / 2f;
