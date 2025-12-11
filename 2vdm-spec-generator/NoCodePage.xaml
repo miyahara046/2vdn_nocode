@@ -102,12 +102,19 @@
         <Border Grid.Row="1" Grid.Column="2" Stroke="Gray" StrokeThickness="1" Padding="10" Margin="5">
             <Grid RowDefinitions="Auto,*">
                 <Label Text="VDM++" FontSize="16" FontAttributes="Bold" Margin="0,0,0,5"/>
-                <Editor Grid.Row="1"
+                <!-- Editor を ScrollView でラップして縦スクロールを有効にする -->
+                <ScrollView Grid.Row="1"
+                            Orientation="Vertical"
+                            VerticalOptions="FillAndExpand"
+                            HorizontalOptions="FillAndExpand">
+                    <Editor
                         Text="{Binding VdmContent}"
-                        VerticalOptions="FillAndExpand"
-                        HorizontalOptions="FillAndExpand"
                         IsReadOnly="True"
-                        Margin="0"/>
+                        Margin="0"
+                        VerticalOptions="Start"
+                        HorizontalOptions="FillAndExpand"
+                        AutoSize="TextChanges" />
+                </ScrollView>
             </Grid>
         </Border>
     </Grid>
