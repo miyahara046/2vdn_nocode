@@ -81,18 +81,10 @@ namespace _2vdm_spec_generator.Services
             var lines = new List<string>(markdown.Split(newLineSeparators, StringSplitOptions.None));
 
             const string targetHeading = "### 有効ボタン一覧";
-            int buttonListHeadingIndex = -1;
-            int searchLimit = Math.Min(5, lines.Count);
+            const string eventHeading = "### イベント一覧";
 
-            // 1行目から最大5行目まで (インデックス0から4まで) を探索
-            for (int i = 0; i < searchLimit; i++)
-            {
-                if (lines[i].Trim() == targetHeading)
-                {
-                    buttonListHeadingIndex = i;
-                    break;
-                }
-            }
+            // ファイル全体から見出しを探索（先頭5行に限定しない）
+            int buttonListHeadingIndex = lines.FindIndex(l => l.Trim() == targetHeading);
 
             if (buttonListHeadingIndex != -1)
             {
@@ -111,7 +103,6 @@ namespace _2vdm_spec_generator.Services
                     // 次の見出しが見つかった場合は、その直前の行に挿入
                     else if (lines[i].Trim().StartsWith("#") && !lines[i].Trim().StartsWith("-") && !lines[i].Trim().StartsWith("*"))
                     {
-                        // 見出しの直前の行に挿入
                         insertionIndex = i;
                         break;
                     }
@@ -127,39 +118,50 @@ namespace _2vdm_spec_generator.Services
                 lines.Insert(insertionIndex, $"- {buttonName}");
             }
             else
-            // ### 有効ボタン一覧 が見つからなかった場合
             {
-                // 最初の4行（インデックス0から3）の中で、テキストが入っている最後の行のインデックスを探す
-                int lastNonEmptyIndex = -1;
-                for (int i = 0; i < Math.Min(lines.Count, 4); i++)
-                {
-                    // Trim()して空文字でなければ、その行がテキストが入っている行
-                    if (!string.IsNullOrWhiteSpace(lines[i]))
-                    {
-                        lastNonEmptyIndex = i;
-                    }
-                }
+                // ### 有効ボタン一覧 が見つからなかった場合、
+                // まず ### イベント一覧 があるか調べ、あればその直前にセクションを追加する（ボタン一覧はイベントの前に置く）
+                int eventHeadingIndex = lines.FindIndex(l => l.Trim() == eventHeading);
+                var newSection = new List<string> { targetHeading, $"- {buttonName}", string.Empty };
 
-                // テキストが入っている最後の行の次の次の行に挿入
-                int insertionIndex = lastNonEmptyIndex + 2;
-
-                // 挿入位置が存在しない場合は、行を追加する
-                while (lines.Count < insertionIndex)
+                if (eventHeadingIndex != -1)
                 {
-                    lines.Add(string.Empty);
-                }
-
-                // 既に直前が空行であれば二重にしない
-                if (insertionIndex > 0 && insertionIndex - 1 < lines.Count && string.IsNullOrWhiteSpace(lines[insertionIndex - 1]))
-                {
-                    // そのまま見出しを挿入
-                    lines.Insert(insertionIndex, targetHeading);
-                    lines.Insert(insertionIndex + 1, $"- {buttonName}");
+                    // イベント見出しの直前に挿入
+                    lines.InsertRange(eventHeadingIndex, newSection);
                 }
                 else
                 {
-                    lines.Insert(insertionIndex, targetHeading);
-                    lines.Insert(insertionIndex + 1, $"- {buttonName}");
+                    // イベント見出しも無ければ、従来のフォールバック位置（先頭付近）に挿入する
+                    // 最初の4行の中で、テキストが入っている最後の行のインデックスを探す
+                    int lastNonEmptyIndex = -1;
+                    for (int i = 0; i < Math.Min(lines.Count, 4); i++)
+                    {
+                        if (!string.IsNullOrWhiteSpace(lines[i]))
+                        {
+                            lastNonEmptyIndex = i;
+                        }
+                    }
+
+                    // テキストが入っている最後の行の次の次の行に挿入
+                    int insertionIndex = lastNonEmptyIndex + 2;
+
+                    // 挿入位置が存在しない場合は、行を追加する
+                    while (lines.Count < insertionIndex)
+                    {
+                        lines.Add(string.Empty);
+                    }
+
+                    // 挿入
+                    if (insertionIndex > 0 && insertionIndex - 1 < lines.Count && string.IsNullOrWhiteSpace(lines[insertionIndex - 1]))
+                    {
+                        lines.Insert(insertionIndex, targetHeading);
+                        lines.Insert(insertionIndex + 1, $"- {buttonName}");
+                    }
+                    else
+                    {
+                        lines.Insert(insertionIndex, targetHeading);
+                        lines.Insert(insertionIndex + 1, $"- {buttonName}");
+                    }
                 }
             }
 
@@ -624,7 +626,8 @@ namespace _2vdm_spec_generator.Services
             {
                 var t = lines[end];
                 if (string.IsNullOrWhiteSpace(t)) { end++; break; }
-                if (t.TrimStart().StartsWith("### ") || t.TrimStart().StartsWith("## ") || t.TrimStart().StartsWith("# ")) break;
+                if (t.TrimStart().StartsWith("### ") || t.TrimStart().StartsWith("## ") || t.TrimStart().StartsWith("# "))
+                    break;
                 end++;
             }
 

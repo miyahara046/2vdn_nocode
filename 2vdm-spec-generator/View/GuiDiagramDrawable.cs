@@ -16,6 +16,9 @@ namespace _2vdm_spec_generator.View
         public const float NodeWidth = 160f;
         public const float NodeHeight = 50f;
 
+        // タイムアウト楕円幅（矩形幅より狭める）
+        private const float TimeoutEllipseWidth = NodeWidth * 0.7f;
+
         // レイアウト
         private const float spacing = 80f;
         private const float leftColumnX = 80f;
@@ -23,7 +26,7 @@ namespace _2vdm_spec_generator.View
         private const float opColumnX = 520f; // 操作（Operation）を並べる右端列
         private const float timeoutStartX = leftColumnX;
         private const float timeoutStartY = 8f;
-        private const float timeoutEventOffset = NodeWidth + 100f;
+        private const float timeoutEventOffset = NodeWidth + 120f;
 
         // 分岐の可視ノード（描画用）を保持（公開して外部から参照可能にする）
         public readonly List<BranchVisual> BranchVisuals = new();
@@ -149,7 +152,7 @@ namespace _2vdm_spec_generator.View
                     }
                 }
 
-                // ブランチ数に応じて各子ノードの中心Yを算出（子ノードは midColumnX に揃える）
+                // ブランチ数に応じて各子ノードのセンターYを算出（子ノードは midColumnX に揃える）
                 int n = evt.Branches.Count;
                 float totalHeight = n * NodeHeight + Math.Max(0, n - 1) * branchSpacing;
 
@@ -295,13 +298,12 @@ namespace _2vdm_spec_generator.View
                 if (TryResolvePosition(el.Name, positions, normPositions, out var f) &&
                     TryResolvePosition(el.Target, positions, normPositions, out var t))
                 {
-                    // 修正: ボタンから始まる線は楕円の右端を起点にする
+                    // 修正: ボタンとタイムアウト（楕円）から始まる線は楕円の右端を起点にする
                     PointF s;
-                    if (el.Type == GuiElementType.Button)
+                    if (el.Type == GuiElementType.Button || el.Type == GuiElementType.Timeout)
                     {
-                        // ボタンは楕円で描画しており、見た目上の右端は矩形右端より内側にある。
-                        float buttonEllipseWi = NodeWidth / 2f;
-                        float ellipseRight = f.X + (NodeWidth + buttonEllipseWi) / 2f;
+                        float ellipseW = (el.Type == GuiElementType.Button) ? NodeWidth / 2f : TimeoutEllipseWidth;
+                        float ellipseRight = f.X + (NodeWidth + ellipseW) / 2f;
                         s = new PointF(ellipseRight, f.Y + NodeHeight / 2f);
                     }
                     else
@@ -310,22 +312,56 @@ namespace _2vdm_spec_generator.View
                     }
 
                     var eP = new PointF(t.X, t.Y + NodeHeight / 2f);
+
+                    // イベント -> タイムアウトの逆向き線はここでは描かない（タイムアウト -> イベント を別で描画する）
+                    if (TryGetElementByPosition(t, out var targetEl) && targetEl.Type == GuiElementType.Timeout && el.Type == GuiElementType.Event)
+                    {
+                        continue;
+                    }
+
+                    // 通常の線（その他のケース）
                     canvas.DrawLine(s, eP);
                     DrawArrow(canvas, s, eP);
                 }
             }
 
-            // --- 分岐の描画：ボタン -> Condition(青長方形) -> Target(緑ひし形) -> 実ターゲット の順で表示 ---
-            // 条件矩形サイズ / ひし形サイズ
-            float condW = NodeWidth * 0.9f;
-            float condH = NodeHeight * 0.7f;
-            // 変更：ひし形幅を狭めて縦長に近づける（横幅が広すぎる問題を修正）
-            float diamondW = NodeWidth * 0.8f;
-            float diamondH = NodeHeight * 0.7f;
-            // condition と target 間の水平ギャップ
-            float midGap = 24f;
-            // 条件矩形を右に寄せる微調整（要求により右へ）
-            float condRightShift = 40f;
+            // --- タイムアウトからタイムアウト紐づきイベントへ矢印を描画 ---
+            foreach (var timeout in Elements.Where(e => e.Type == GuiElementType.Timeout && !string.IsNullOrWhiteSpace(e.Name)))
+            {
+                // このタイムアウト名を Target に持つイベントを探す（正規化して比較）
+                var linkedEvents = Elements.Where(ev =>
+                    ev.Type == GuiElementType.Event &&
+                    !string.IsNullOrWhiteSpace(ev.Target) &&
+                    string.Equals(NormalizeLabel(ev.Target), NormalizeLabel(timeout.Name), StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+
+                if (linkedEvents.Count == 0) continue;
+
+                float ellipseW = TimeoutEllipseWidth;
+                var timeoutRight = new PointF(timeout.X + (NodeWidth + ellipseW) / 2f, timeout.Y + NodeHeight / 2f);
+
+                foreach (var ev in linkedEvents)
+                {
+                    var eventLeft = new PointF(ev.X, ev.Y + NodeHeight / 2f);
+                    canvas.StrokeColor = Colors.Gray;
+                    canvas.StrokeSize = 2;
+                    canvas.DrawLine(timeoutRight, eventLeft);
+                    // 矢印はタイムアウト -> イベント の向き（先端がイベント側）
+                    DrawArrow(canvas, timeoutRight, eventLeft, Colors.Black);
+                }
+            }
+
+            // --- 分岐の描画：ボタン -> Condition(ダイヤモンド) -> Target(長方形) -> 実ターゲット の順で表示 ---
+            // condition (diamond) / target (rect) サイズ
+            // ここを拡大：Condition ダイヤモンドの幅と高さを大きく設定
+            float condDiamondW = NodeWidth * 1.1f;   // 以前 0.8f -> 1.1f
+            float condDiamondH = NodeHeight * 1.1f;  // 以前 0.7f -> 1.1f
+            float targetW = NodeWidth * 0.95f;
+            float targetH = NodeHeight * 0.8f;
+            // condition と target 間の水平ギャップ（若干拡大）
+            float midGap = 20f;
+            // 条件ダイヤモンドを右に寄せる微調整（見た目の調整用）
+            float condRightShift = 70f;
 
             // ボタン楕円幅（半分にする）
             float buttonEllipseW = NodeWidth / 2f;
@@ -343,75 +379,76 @@ namespace _2vdm_spec_generator.View
                 else
                     basePoint = new PointF(bv.ParentEvent.X + NodeWidth, bv.ParentEvent.Y + NodeHeight / 2f);
 
-                // 中央参照点 bv.CenterX はブロックの中心。配置方針：
-                // condCenter = bv.CenterX - (diamondW/2 + midGap/2 + condW/2) + condRightShift
-                // targetCenter = bv.CenterX + (diamondW/2 + midGap/2)
-                float condCenterX = bv.CenterX - (diamondW / 2f + midGap / 2f + condW / 2f) + condRightShift;
-                float targetCenterX = bv.CenterX + (diamondW / 2f + midGap / 2f);
+                // 中央参照点 bv.CenterX はブロックの中心。配置方針（左：ダイヤモンド(cond)、右：長方形(target)）
+                float condCenterX = bv.CenterX - (condDiamondW / 2f + midGap / 2f + targetW / 2f) + condRightShift;
+                float targetCenterX = bv.CenterX + (condDiamondW / 2f + midGap / 2f);
 
                 var condCenter = new PointF(condCenterX, bv.CenterY);
                 var targetCenter = new PointF(targetCenterX, bv.CenterY);
 
-                // 起点 -> 条件矩形左側へ線を引く
-                var condLeft = new PointF(condCenter.X - condW / 2f, condCenter.Y);
+                // 起点 -> 条件ダイヤモンド左側へ線を引く
+                var diamondLeft = new PointF(condCenter.X - condDiamondW / 2f, condCenter.Y);
                 canvas.StrokeColor = Colors.DarkBlue;
                 canvas.StrokeSize = 2;
-                canvas.DrawLine(basePoint, condLeft);
+                canvas.DrawLine(basePoint, diamondLeft);
+                // 変更: ボタン（起点）-> 条件（ダイヤモンド）へ矢印を追加
+                DrawArrow(canvas, basePoint, diamondLeft, Colors.DarkBlue);
 
-                // 条件矩形（青）
-                var condRect = new RectF(condCenter.X - condW / 2f, condCenter.Y - condH / 2f, condW, condH);
+                // 条件ダイヤモンド（青）
                 canvas.FillColor = Colors.SkyBlue;
-                canvas.FillRectangle(condRect);
-                canvas.StrokeColor = Colors.DarkBlue;
-                canvas.DrawRectangle(condRect);
-
-                // 条件ラベル（矩形中央）
-                canvas.FontColor = Colors.Black;
-                canvas.FontSize = 12;
-                var condText = string.IsNullOrWhiteSpace(bv.Condition) ? "(条件)" : bv.Condition;
-                canvas.DrawString(condText, condRect, HorizontalAlignment.Center, VerticalAlignment.Center);
-
-                // 矩形右 -> ひし形（Target）左 へ矢印（条件 -> ターゲット）
-                var condRight = new PointF(condCenter.X + condW / 2f, condCenter.Y);
-                var diamondLeft = new PointF(targetCenter.X - diamondW / 2f, targetCenter.Y);
-                // 矩形右から少し内側へ線を引き、矢印でつなぐ
-                canvas.StrokeColor = Colors.DarkGreen;
-                canvas.StrokeSize = 1.8f;
-                canvas.DrawLine(condRight, diamondLeft);
-                DrawArrow(canvas, condRight, diamondLeft);
-
-                // ひし形（緑）描画（ターゲット）
-                canvas.FillColor = Colors.LightGreen;
                 using (var path = new PathF())
                 {
-                    path.MoveTo(targetCenter.X, targetCenter.Y - diamondH / 2f); // top
-                    path.LineTo(targetCenter.X + diamondW / 2f, targetCenter.Y); // right
-                    path.LineTo(targetCenter.X, targetCenter.Y + diamondH / 2f); // bottom
-                    path.LineTo(targetCenter.X - diamondW / 2f, targetCenter.Y); // left
+                    path.MoveTo(condCenter.X, condCenter.Y - condDiamondH / 2f); // top
+                    path.LineTo(condCenter.X + condDiamondW / 2f, condCenter.Y); // right
+                    path.LineTo(condCenter.X, condCenter.Y + condDiamondH / 2f); // bottom
+                    path.LineTo(condCenter.X - condDiamondW / 2f, condCenter.Y); // left
                     path.Close();
                     canvas.FillPath(path);
-                    canvas.StrokeColor = Colors.DarkGreen;
+                    canvas.StrokeColor = Colors.DarkBlue;
                     canvas.DrawPath(path);
                 }
 
-                // ひし形中央に Target 名を表示（先頭の '→' を除去して表示）
-                var rawTarget = CleanTargetLabel(bv.Target);
-                var targetLabel = string.IsNullOrWhiteSpace(rawTarget) ? "(未指定)" : rawTarget;
-                var targetRect = new RectF(targetCenter.X - diamondW / 2f + 6f, targetCenter.Y - 10f, diamondW - 12f, 20f);
+                // 条件ラベル（ダイヤモンド中央）
                 canvas.FontColor = Colors.Black;
                 canvas.FontSize = 12;
-                canvas.DrawString(targetLabel, targetRect, HorizontalAlignment.Center, VerticalAlignment.Center);
+                var condText = string.IsNullOrWhiteSpace(bv.Condition) ? "(条件)" : bv.Condition;
+                var condTextRect = new RectF(condCenter.X - condDiamondW / 2f + 6f, condCenter.Y - 10f, condDiamondW - 12f, 20f);
+                canvas.DrawString(condText, condTextRect, HorizontalAlignment.Center, VerticalAlignment.Center);
 
-                // ひし形右端 -> 実ノード(Target) へ線（Target が解決できれば接続）
+                // ダイヤモンド右 -> ターゲット長方形左 へ矢印（条件 -> ターゲット）
+                var condRight = new PointF(condCenter.X + condDiamondW / 2f, condCenter.Y);
+                var targetLeft = new PointF(targetCenter.X - targetW / 2f, targetCenter.Y);
+                // ダイヤモンド右から線を引き、矢印でつなぐ
+                canvas.StrokeColor = Colors.DarkGreen;
+                canvas.StrokeSize = 1.8f;
+                canvas.DrawLine(condRight, targetLeft);
+                DrawArrow(canvas, condRight, targetLeft);
+
+                // ターゲット長方形（緑）
+                var targetRect = new RectF(targetCenter.X - targetW / 2f, targetCenter.Y - targetH / 2f, targetW, targetH);
+                canvas.FillColor = Colors.LightGreen;
+                canvas.FillRectangle(targetRect);
+                canvas.StrokeColor = Colors.DarkGreen;
+                canvas.DrawRectangle(targetRect);
+
+                // 長方形中央に Target 名を表示（先頭の '→' を除去して表示）
+                var rawTarget = CleanTargetLabel(bv.Target);
+                var targetLabel = string.IsNullOrWhiteSpace(rawTarget) ? "(未指定)" : rawTarget;
+                canvas.FontColor = Colors.Black;
+                canvas.FontSize = 12;
+                var targetLabelRect = new RectF(targetCenter.X - targetW / 2f + 6f, targetCenter.Y - 10f, targetW - 12f, 20f);
+                canvas.DrawString(targetLabel, targetLabelRect, HorizontalAlignment.Center, VerticalAlignment.Center);
+
+                // 長方形右端 -> 実ノード(Target) へ線（Target が解決できれば接続）
                 if (!string.IsNullOrWhiteSpace(bv.Target) && TryResolvePosition(bv.Target, positions, normPositions, out var targetPos))
                 {
-                    var diamondRight = new PointF(targetCenter.X + diamondW / 2f, targetCenter.Y);
+                    var targetRectRight = new PointF(targetCenter.X + targetW / 2f, targetCenter.Y);
                     var targetPoint = new PointF(targetPos.X, targetPos.Y + NodeHeight / 2f);
 
                     canvas.StrokeColor = Colors.Gray;
                     canvas.StrokeSize = 1.5f;
-                    canvas.DrawLine(diamondRight, new PointF(targetPoint.X - 6f, targetPoint.Y));
-                    DrawArrow(canvas, diamondRight, targetPoint);
+                    canvas.DrawLine(targetRectRight, new PointF(targetPoint.X - 6f, targetPoint.Y));
+                    DrawArrow(canvas, targetRectRight, targetPoint);
                 }
             }
 
@@ -431,7 +468,8 @@ namespace _2vdm_spec_generator.View
                 if (el.Type == GuiElementType.Timeout) canvas.FillColor = Colors.Pink;
                 else if (el.Type == GuiElementType.Button) canvas.FillColor = Colors.LightBlue;
                 else if (el.Type == GuiElementType.Event && attachedToTimeout) canvas.FillColor = Colors.Pink;
-                else if (el.Type == GuiElementType.Event || el.Type == GuiElementType.Operation) canvas.FillColor = Colors.LightGreen;
+                else if (el.Type == GuiElementType.Event) canvas.FillColor = Colors.LightGreen;
+                else if (el.Type == GuiElementType.Operation) canvas.FillColor = Colors.LightGreen;
                 else if (el.Type == GuiElementType.Screen) canvas.FillColor = Colors.Lavender;
                 else canvas.FillColor = Colors.LightGray;
 
@@ -478,8 +516,9 @@ namespace _2vdm_spec_generator.View
                     canvas.FontSize = 14;
                     canvas.DrawString(el.Name ?? "", r, HorizontalAlignment.Center, VerticalAlignment.Center);
                 }
-                else if (el.Type == GuiElementType.Event && attachedToTimeout)
+                else if (el.Type == GuiElementType.Event)
                 {
+                    // 変更: イベントは矩形で描画（分岐イベントは描画抑制済）
                     canvas.FillRectangle(r);
                     canvas.DrawRectangle(r);
 
@@ -496,8 +535,9 @@ namespace _2vdm_spec_generator.View
                     canvas.FontSize = 14;
                     canvas.DrawString(el.Name ?? "", r, HorizontalAlignment.Center, VerticalAlignment.Center);
                 }
-                else if (el.Type == GuiElementType.Event || el.Type == GuiElementType.Operation)
+                else if (el.Type == GuiElementType.Operation)
                 {
+                    // Operation は従来通りひし形（ロド型）で描画
                     using (var path = new PathF())
                     {
                         path.MoveTo(r.X + r.Width / 2f, r.Y);
@@ -513,10 +553,7 @@ namespace _2vdm_spec_generator.View
                     {
                         canvas.StrokeColor = Colors.Orange;
                         canvas.StrokeSize = 3;
-                        canvas.DrawPath(new PathF()
-                        {
-                            // no-op for selection path reuse; keep simple by drawing expanded rounded rect
-                        });
+                        // 既存の簡易 selection 表現を維持
                         canvas.StrokeSize = 2;
                         canvas.StrokeColor = Colors.Black;
                     }
@@ -527,21 +564,24 @@ namespace _2vdm_spec_generator.View
                 }
                 else if (el.Type == GuiElementType.Timeout)
                 {
-                    canvas.FillRectangle(r);
-                    canvas.DrawRectangle(r);
+                    // 変更: タイムアウトを楕円で描画（幅を縮め中央寄せ）
+                    float ellipseW = TimeoutEllipseWidth;
+                    var ellipseRect = new RectF(el.X + (NodeWidth - ellipseW) / 2f, el.Y, ellipseW, NodeHeight);
+                    canvas.FillEllipse(ellipseRect);
+                    canvas.DrawEllipse(ellipseRect);
 
                     if (el.IsSelected)
                     {
                         canvas.StrokeColor = Colors.Orange;
                         canvas.StrokeSize = 3;
-                        canvas.DrawRectangle(r.Expand(4));
+                        canvas.DrawEllipse(ellipseRect.Expand(4));
                         canvas.StrokeSize = 2;
                         canvas.StrokeColor = Colors.Black;
                     }
 
                     canvas.FontColor = Colors.Black;
                     canvas.FontSize = 14;
-                    canvas.DrawString(el.Name ?? "", r, HorizontalAlignment.Center, VerticalAlignment.Center);
+                    canvas.DrawString(el.Name ?? "", ellipseRect, HorizontalAlignment.Center, VerticalAlignment.Center);
                 }
                 else
                 {
@@ -616,10 +656,19 @@ namespace _2vdm_spec_generator.View
             return false;
         }
 
-        private void DrawArrow(ICanvas canvas, PointF start, PointF end)
+        // 指定位置に対応する要素を取得（簡易検索：同一座標の要素を返す）
+        private bool TryGetElementByPosition(PointF pos, out GuiElement element)
+        {
+            element = Elements.FirstOrDefault(e => MathF.Abs(e.X - pos.X) < 0.1f && MathF.Abs(e.Y - pos.Y) < 0.1f);
+            return element != null;
+        }
+
+        // 矢印描画（色を指定可能にした）
+        private void DrawArrow(ICanvas canvas, PointF start, PointF end, Color? color = null)
         {
             float size = 6f;
-            canvas.StrokeColor = Colors.Gray;
+            var arrowColor = color ?? Colors.Gray;
+            canvas.StrokeColor = arrowColor;
             canvas.StrokeSize = 2;
             float angle = MathF.Atan2(end.Y - start.Y, end.X - start.X);
             var p1 = new PointF(end.X - size * MathF.Cos(angle - 0.3f), end.Y - size * MathF.Sin(angle - 0.3f));
