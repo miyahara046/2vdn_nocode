@@ -579,8 +579,6 @@ namespace _2vdm_spec_generator.ViewModel
         {
             if (SelectedItem == null || !SelectedItem.IsFile) return;
 
-            // --- ボタン候補の取得 ---
-            // GuiElements からボタン名だけを抽出し、重複を排除して ActionSheet に渡す
             var buttonNames = GuiElements?
                 .Where(g => g.Type == GuiElementType.Button && !string.IsNullOrWhiteSpace(g.Name))
                 .Select(g => g.Name.Trim())
@@ -593,16 +591,14 @@ namespace _2vdm_spec_generator.ViewModel
                 return;
             }
 
-            // --- ボタン選択 ---
             string selectedButton = await Shell.Current.DisplayActionSheet(
                 "イベントを追加するボタンを選んでください",
                 "キャンセル", null,
                 buttonNames
-            );　　　
+            );
 
             if (string.IsNullOrEmpty(selectedButton) || selectedButton == "キャンセル") return;
 
-            // --- 条件分岐の有無を確認 ---
             bool isConditional = await Shell.Current.DisplayAlert(
                 "条件分岐イベント",
                 "このイベントに条件分岐を追加しますか？",
@@ -614,50 +610,51 @@ namespace _2vdm_spec_generator.ViewModel
             var builder = new UiToMarkdownConverter();
             string newMarkdown;
 
-            // 重複チェック（マークダウン内の既存イベントを直接検索して判定）
-            // 非条件イベント: "- {button}押下 → {target}" の完全一致を避ける
             if (!isConditional)
             {
-                string eventName = await Shell.Current.DisplayPromptAsync(
-                    "イベント", "イベントの遷移先や名前を入力してください", "OK", "キャンセル", placeholder: "TargetScreen"
-                );
+                // 非条件イベントでも ConditionInputPopup を再利用する（条件欄は非表示にする）
+                var popup = new ConditionInputPopup
+                {
+                    RequireCondition = false
+                };
+                popup.UpdateRequireCondition();
+
+                var result = await Shell.Current.CurrentPage.ShowPopupAsync(popup);
+                if (result is not ValueTuple<string, string> values)
+                    return;
+
+                // popup は条件不要なので values.Item1 は null（または無視して良い）
+                string eventName = values.Item2?.Trim();
                 if (string.IsNullOrWhiteSpace(eventName)) return;
 
-                // 比較のためにトリミングして候補行を作る
-                string candidateLine = $"- {selectedButton}押下 → {eventName.Trim()}";
+                // 重複チェック：マークダウン内に既に同一の "- {button}押下 → {target}" が存在するか
+                string candidateLine = $"- {selectedButton}押下 → {eventName}";
                 var lines = currentMarkdown.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).Select(l => l.Trim()).ToArray();
-
                 if (lines.Any(l => string.Equals(l, candidateLine, StringComparison.OrdinalIgnoreCase)))
                 {
                     await Shell.Current.DisplayAlert("重複", $"同じイベント \"{candidateLine}\" は既に存在します。", "OK");
                     return;
                 }
 
-                newMarkdown = builder.AddEvent(currentMarkdown, selectedButton.Trim(), eventName.Trim());
+                newMarkdown = builder.AddEvent(currentMarkdown, selectedButton.Trim(), eventName);
             }
             else
             {
-                // 条件分岐イベント：既にそのボタンのイベントブロックが存在しないか確認
+                // 条件分岐イベント（既存ロジックを維持）
                 var lines = currentMarkdown.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
                 bool blockExists = lines.Any(l => l.TrimStart().StartsWith($"- {selectedButton}押下", StringComparison.OrdinalIgnoreCase));
 
                 if (blockExists)
                 {
-                    // 既存ブロックがある場合は重複追加を禁止（もしくは確認してブランチ追加する案がある）
                     bool addAnyway = await Shell.Current.DisplayAlert("既存のイベントがあります", $"ボタン \"{selectedButton}\" には既にイベント定義があります。新しい条件分岐を追加しますか？", "追加する", "キャンセル");
                     if (!addAnyway) return;
-
-                    // ユーザーが "追加する" を選んだ場合は既存ブロックに追加する実装は UiToMarkdownConverter にないため、
-                    // 簡易的に既存マークダウンの末尾に条件分岐ブロックを追加する（既存ブロックとの整合性は簡易処理）
                 }
 
-                // 条件分岐ブランチの入力ループ
                 var branches = new List<(string Condition, string Target)>();
                 bool addMore = true;
 
                 while (addMore)
                 {
-                    // カスタム Popup を呼び出して条件とターゲットを取得する
                     var popup = new ConditionInputPopup();
                     var result = await Shell.Current.CurrentPage.ShowPopupAsync(popup);
 
@@ -1084,6 +1081,7 @@ namespace _2vdm_spec_generator.ViewModel
             {
                 if (string.IsNullOrWhiteSpace(lines[j])) { j++; continue; }
                 var t = lines[j].TrimStart();
+                // stop if next top-level item or heading
                 if (t.StartsWith("- ") && !lines[j].StartsWith("  ")) break;
                 if (t.StartsWith("#")) break;
                 j++;
