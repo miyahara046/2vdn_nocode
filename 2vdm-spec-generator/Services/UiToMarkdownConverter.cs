@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.IO;
 using _2vdm_spec_generator.ViewModel;
 
 namespace _2vdm_spec_generator.Services
@@ -49,7 +50,6 @@ namespace _2vdm_spec_generator.Services
             var targetItem = $"- {screenName}".Trim();
             if (lines.Any(l => string.Equals(l?.Trim(), targetItem, StringComparison.OrdinalIgnoreCase)))
             {
-                // 重複があれば元のマークダウンを正規化して返す（何も追加しない）
                 lines = NormalizeEmptyLines(lines);
                 return string.Join(Environment.NewLine, lines);
             }
@@ -68,6 +68,7 @@ namespace _2vdm_spec_generator.Services
             lines.Add($"- {screenName}");
 
             lines = NormalizeEmptyLines(lines);
+            // ScreenList doesn't affect ordering of button/event sections, so no reorder call here.
             return string.Join(Environment.NewLine, lines);
         }
 
@@ -175,6 +176,7 @@ namespace _2vdm_spec_generator.Services
             }
 
             lines = NormalizeEmptyLines(lines);
+            lines = EnsureButtonBeforeEvent(lines);
             return string.Join(Environment.NewLine, lines);
         }
 
@@ -247,6 +249,7 @@ namespace _2vdm_spec_generator.Services
             lines.Insert(insertionIndex, newLine);
 
             lines = NormalizeEmptyLines(lines);
+            lines = EnsureButtonBeforeEvent(lines);
             return string.Join(Environment.NewLine, lines);
         }
 
@@ -353,9 +356,9 @@ namespace _2vdm_spec_generator.Services
                     }
 
                     lines = NormalizeEmptyLines(lines);
+                    lines = EnsureButtonBeforeEvent(lines);
                     return string.Join(Environment.NewLine, lines);
                 }
-                // 親が見つからなければ以下で新規追加（既存の動作）
             }
             else
             {
@@ -395,6 +398,7 @@ namespace _2vdm_spec_generator.Services
             }
 
             lines = NormalizeEmptyLines(lines);
+            lines = EnsureButtonBeforeEvent(lines);
             return string.Join(Environment.NewLine, lines);
         }
 
@@ -510,6 +514,7 @@ namespace _2vdm_spec_generator.Services
             }
 
             lines = NormalizeEmptyLines(lines);
+            lines = EnsureButtonBeforeEvent(lines);
             return string.Join(Environment.NewLine, lines);
         }
 
@@ -517,16 +522,6 @@ namespace _2vdm_spec_generator.Services
         /// <summary>
         /// Markdown ファイルの中で、GUI 上の要素位置（elements に基づく Y 順）に合わせて
         /// 「有効ボタン一覧」と「イベント一覧」の順序を再構築してファイルへ書き戻すユーティリティ。
-        /// 
-        /// 実装のポイント:
-        /// - ファイルを丸ごと読み込み、行単位で操作した後、上書き保存する（File I/O を伴う）。
-        /// - ReplaceListSection / ReplaceEventSection を使ってそれぞれのセクションを置換する。
-        /// - 書き戻しは UTF-8 (System.Text.Encoding.UTF8) を用いる。
-        /// 
-        /// 注意:
-        /// - ファイル操作で例外が発生する可能性がある（アクセス権、同時書き込み等）。呼び出し側で例外対処を行うか、
-        ///   このメソッドを try/catch で囲むことを推奨する。
-        /// - elements の内容（Name 非 null、Y 座標など）に依存して動作するため、事前検証を行っておくと安全。
         /// </summary>
         public static void UpdateMarkdownOrder(string markdownFilePath, IEnumerable<GuiElement> elements)
         {
@@ -849,7 +844,46 @@ namespace _2vdm_spec_generator.Services
 
             return result;
         }
+
+        /// <summary>
+        /// 「### 有効ボタン一覧」が存在し、かつ「### イベント一覧」が存在する場合に
+        /// ボタン一覧セクションが必ずイベント一覧より前に来るようにする。
+        /// </summary>
+        private static List<string> EnsureButtonBeforeEvent(List<string> lines)
+        {
+            if (lines == null) return lines;
+
+            const string buttonHeading = "### 有効ボタン一覧";
+            const string eventHeading = "### イベント一覧";
+
+            int buttonIdx = lines.FindIndex(l => l.Trim() == buttonHeading);
+            int eventIdx = lines.FindIndex(l => l.Trim() == eventHeading);
+
+            if (buttonIdx == -1 || eventIdx == -1) return lines;
+            if (buttonIdx < eventIdx) return lines; // 既に正しい順序
+
+            // 抽出: buttonIdx からセクション終端まで
+            int end = buttonIdx + 1;
+            while (end < lines.Count)
+            {
+                var t = lines[end];
+                if (string.IsNullOrWhiteSpace(t))
+                {
+                    end++; // 空行も含めて区切りとする（元の実装パターンに合わせる）
+                    break;
+                }
+                if (t.TrimStart().StartsWith("### ") || t.TrimStart().StartsWith("## ") || t.TrimStart().StartsWith("# "))
+                    break;
+                end++;
+            }
+
+            var section = lines.GetRange(buttonIdx, end - buttonIdx);
+            lines.RemoveRange(buttonIdx, end - buttonIdx);
+
+            // eventIdx は元々 buttonIdx より小さいので、削除後も同じ位置にある
+            lines.InsertRange(eventIdx, section);
+
+            return NormalizeEmptyLines(lines);
+        }
     }
-
-
 }
