@@ -67,7 +67,7 @@
                             <Label Text="{Binding Name}"
                                    VerticalOptions="Center"
                                    Padding="{Binding Level, Converter={StaticResource LevelToIndentConverter}}"
-                                   BackgroundColor="{Binding ., Converter={StaticResource SelectedToColorConverter}, ConverterParameter={x:Reference Page}}">
+                                   BackgroundColor="{Binding ., Converter={StaticResource SelectedToColorConverter}, ConverterParameter={x:Reference Page}}"> 
                                 <Label.GestureRecognizers>
                                     <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type vm:NoCodePageViewModel}}, Path=SelectItemCommand}"
                                                           CommandParameter="{Binding}" />
@@ -86,12 +86,13 @@
             <Grid RowDefinitions="Auto,*">
                 <Label Text="Condition Transition Map" FontSize="16" FontAttributes="Bold" Margin="0,0,0,5"/>
 
-                <!-- 外側の ScrollView を復活させ、Renderer は内部で ScrollView を持たない前提 -->
-                <ScrollView Grid.Row="1" VerticalOptions="FillAndExpand" HorizontalOptions="FillAndExpand">
+                <!-- ScrollView を縦横スクロール可能に変更 -->
+                <ScrollView Grid.Row="1" VerticalOptions="FillAndExpand" HorizontalOptions="FillAndExpand" Orientation="Both">
+                    <!-- コンテナは横幅がコンテンツに合わせて決まるように Start にする -->
                     <ContentView x:Name="DiagramContainer"
                                  BackgroundColor="WhiteSmoke"
-                                 VerticalOptions="FillAndExpand"
-                                 HorizontalOptions="FillAndExpand"/>
+                                 VerticalOptions="Start"
+                                 HorizontalOptions="Start"/>
                 </ScrollView>
             </Grid>
         </Border>
@@ -101,12 +102,19 @@
         <Border Grid.Row="1" Grid.Column="2" Stroke="Gray" StrokeThickness="1" Padding="10" Margin="5">
             <Grid RowDefinitions="Auto,*">
                 <Label Text="VDM++" FontSize="16" FontAttributes="Bold" Margin="0,0,0,5"/>
-                <Editor Grid.Row="1"
+                <!-- Editor を ScrollView でラップして縦スクロールを有効にする -->
+                <ScrollView Grid.Row="1"
+                            Orientation="Vertical"
+                            VerticalOptions="FillAndExpand"
+                            HorizontalOptions="FillAndExpand">
+                    <Editor
                         Text="{Binding VdmContent}"
-                        VerticalOptions="FillAndExpand"
-                        HorizontalOptions="FillAndExpand"
                         IsReadOnly="True"
-                        Margin="0"/>
+                        Margin="0"
+                        VerticalOptions="Start"
+                        HorizontalOptions="FillAndExpand"
+                        AutoSize="TextChanges" />
+                </ScrollView>
             </Grid>
         </Border>
     </Grid>

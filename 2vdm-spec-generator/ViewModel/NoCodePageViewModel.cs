@@ -13,6 +13,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
+using System.Text; // 追加: Encoding 等のため
 
 namespace _2vdm_spec_generator.ViewModel
 {
@@ -259,12 +260,10 @@ namespace _2vdm_spec_generator.ViewModel
                 return;
             }
 
-            // 追加先ディレクトリの決定。選択がファイルならその親ディレクトリ、フォルダならそのフォルダ自身。
             string targetDir = SelectedItem.IsFile
-                ? Path.GetDirectoryName(SelectedItem.FullPath)  // ファイルなら親ディレクトリ
-                : SelectedItem.FullPath;                        // フォルダならそのフォルダ直下
+                ? Path.GetDirectoryName(SelectedItem.FullPath)
+                : SelectedItem.FullPath;
 
-            // ユーザーにファイル名を入力してもらう（拡張子は不要にしている）
             string fileName = await Shell.Current.DisplayPromptAsync(
                 "新規ファイル作成",
                 "ファイル名を入力してください（拡張子不要）",
@@ -277,12 +276,10 @@ namespace _2vdm_spec_generator.ViewModel
             string newPath = Path.Combine(targetDir, fileName);
             if (File.Exists(newPath))
             {
-                // 同名ファイルがあればエラー表示して終了
                 await Shell.Current.DisplayAlert("エラー", "同名ファイルが存在します", "OK");
                 return;
             }
 
-            // 簡易テンプレートを書き出す。将来的にはテンプレート選択などの拡張が可能である。
             File.WriteAllText(newPath, "New Class\n");
 
             // フォルダツリーをリロードして、作成したファイルを選択状態にして読み込む
@@ -293,8 +290,192 @@ namespace _2vdm_spec_generator.ViewModel
 
             // 新規作成直後はクラス追加ボタンを表示しておく
             IsClassAddButtonVisible = true;
+
+            // 重要: 新規ファイル作成時は自動で画面一覧に追加しない（クラス追加時にユーザーが名前を決めて追加する）
+            // （以前はここで EnsureScreenListHasClass を呼んでいましたが、それを削除しました）
+
         }
 
+        [RelayCommand]
+　　　　　private async Task AddClassHeadingAsync()
+        {
+            if (SelectedItem == null || !SelectedItem.IsFile) return;
+
+            // 画面一覧ファイルが存在するか確認（SelectedFolderPath または SelectedItem の親フォルダを探索）
+            var screenListPath = FindScreenListFilePath();
+
+            string classType;
+            if (screenListPath != null)
+            {
+                // 画面一覧が既にある場合は種類選択を行わず「クラスの追加」を固定
+                classType = "画面クラスの追加";
+            }
+            else
+            {
+                // 存在しなければユーザーに選ばせる
+                classType = await Shell.Current.DisplayActionSheet(
+                    "追加するクラスの種類を選んでください",
+                    "キャンセル", null,
+                    "画面一覧クラスの追加", "画面クラスの追加"
+                );
+
+                if (string.IsNullOrEmpty(classType) || classType == "キャンセル") return;
+            }
+
+            string className = null;
+            string inputName = null;
+            if (classType == "画面クラスの追加")
+            {
+                // ユーザー入力か自動遷移（画面一覧がある場合）どちらでもクラス名を取得する
+                string temp = await Shell.Current.DisplayPromptAsync(
+                    "画面クラス追加", "クラス名を入力してください", "OK", "キャンセル", placeholder: "MyClass"
+                );
+                if (string.IsNullOrWhiteSpace(temp)) return;
+                inputName = temp.Trim();
+                className = $"# {inputName}";
+            }
+
+            string path = SelectedItem.FullPath;
+            string currentMarkdown = File.Exists(path) ? File.ReadAllText(path) : string.Empty;
+
+            var builder = new UiToMarkdownConverter();
+            string newMarkdown = classType switch
+            {
+                "画面一覧クラスの追加" => builder.AddClassHeading(currentMarkdown, " 画面一覧"),
+                "画面クラスの追加" => builder.AddClassHeading(currentMarkdown, className),
+                _ => currentMarkdown
+            };
+
+            // ファイル書き換えと VDM++ 再生成
+            File.WriteAllText(path, newMarkdown, Encoding.UTF8);
+
+            var converter = new MarkdownToVdmConverter();
+            string vdmContent = converter.ConvertToVdm(newMarkdown);
+            File.WriteAllText(Path.ChangeExtension(path, ".vdmpp"), vdmContent, Encoding.UTF8);
+
+            // ViewModel のプロパティ更新と再解析
+            MarkdownContent = newMarkdown;
+            VdmContent = vdmContent;
+
+            LoadMarkdownAndVdm(path);
+
+            // クラス追加時は画面一覧に同名がなければ追加
+            if (classType == "画面クラスの追加" && !string.IsNullOrWhiteSpace(inputName))
+            {
+                await EnsureScreenListHasClass(inputName);
+            }
+        }
+
+        // ヘルパー: SelectedFolderPath（または SelectedItem の親）配下に先頭行が "# 画面一覧" の .md があるか探してパスを返す
+        private string FindScreenListFilePath()
+        {
+            string basePath = SelectedFolderPath;
+            if (string.IsNullOrWhiteSpace(basePath) && SelectedItem != null && !string.IsNullOrWhiteSpace(SelectedItem.FullPath))
+                basePath = Path.GetDirectoryName(SelectedItem.FullPath);
+
+            if (string.IsNullOrWhiteSpace(basePath) || !Directory.Exists(basePath))
+                return null;
+
+            try
+            {
+                var mdFiles = Directory.GetFiles(basePath, "*.md", SearchOption.AllDirectories);
+                foreach (var f in mdFiles)
+                {
+                    try
+                    {
+                        var first = File.ReadLines(f).FirstOrDefault() ?? "";
+                        if (first.TrimStart().StartsWith("# 画面一覧", StringComparison.OrdinalIgnoreCase))
+                            return f;
+                    }
+                    catch
+                    {
+                        // 読めないファイルはスキップ
+                    }
+                }
+            }
+            catch
+            {
+                // ディレクトリ検索失敗は無視して null を返す
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// SelectedFolderPath 配下の「# 画面一覧」ファイルを探し、
+        /// 指定したクラス名がリストに存在しなければ "- {className}" を追加する。
+        /// 見つからない場合は SelectedFolderPath に "ScreenList.md" を作成して追加する。
+        /// </summary>
+        private async Task EnsureScreenListHasClass(string className)
+        {
+            if (string.IsNullOrWhiteSpace(className)) return;
+
+            try
+            {
+                // まず SelectedFolderPath を基準に検索
+                string basePath = SelectedFolderPath;
+                if (string.IsNullOrWhiteSpace(basePath))
+                {
+                    // フォルダが未選択ならルート (SelectedItem の親など) を試す
+                    if (SelectedItem != null && !string.IsNullOrWhiteSpace(SelectedItem.FullPath))
+                    {
+                        basePath = Path.GetDirectoryName(SelectedItem.FullPath);
+                    }
+                }
+
+                if (string.IsNullOrWhiteSpace(basePath) || !Directory.Exists(basePath))
+                {
+                    return;
+                }
+
+                var mdFiles = Directory.GetFiles(basePath, "*.md", SearchOption.AllDirectories);
+
+                // 先頭行が "# 画面一覧" のファイルを探す
+                string screenListFile = mdFiles.FirstOrDefault(f =>
+                {
+                    try
+                    {
+                        var first = File.ReadLines(f).FirstOrDefault() ?? "";
+                        return first.TrimStart().StartsWith("# 画面一覧", StringComparison.OrdinalIgnoreCase);
+                    }
+                    catch
+                    {
+                        return false;
+                    }
+                });
+
+                // 見つからなければルートに作成する
+                if (screenListFile == null)
+                {
+                    screenListFile = Path.Combine(basePath, "ScreenList.md");
+                    var init = "# 画面一覧" + Environment.NewLine + Environment.NewLine;
+                    File.WriteAllText(screenListFile, init, Encoding.UTF8);
+                }
+
+                // 内容読み込みと重複チェック
+                var content = File.ReadAllText(screenListFile);
+                var lines = content.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).ToList();
+                var targetItem = $"- {className}";
+                bool exists = lines.Any(l => string.Equals(l?.Trim(), targetItem, StringComparison.OrdinalIgnoreCase));
+                if (!exists)
+                {
+                    var conv = new UiToMarkdownConverter();
+                    var newContent = conv.AddScreenList(content, className);
+                    File.WriteAllText(screenListFile, newContent, Encoding.UTF8);
+
+                    // UI に反映するためフォルダツリーを再ロード（任意）
+                    LoadFolderItems();
+
+                    // ユーザーに簡単に通知（任意）
+                    await Application.Current.MainPage.DisplayAlert("更新", $"画面一覧に '{className}' を追加しました。", "OK");
+                }
+            }
+            catch (Exception ex)
+            {
+                // 失敗しても UI を壊さないが通知は行う
+                await Application.Current.MainPage.DisplayAlert("エラー", $"画面一覧更新中にエラーが発生しました: {ex.Message}", "OK");
+            }
+        }
 
         // ===== Markdown 保存 =====
         // 編集中の MarkdownContent をファイルに上書き保存し、同時に VDM++ に変換して .vdmpp ファイルを作る。
@@ -324,62 +505,6 @@ namespace _2vdm_spec_generator.ViewModel
             var converter = new MarkdownToVdmConverter();
             VdmContent = converter.ConvertToVdm(File.ReadAllText(mdPath));
             File.WriteAllText(Path.ChangeExtension(mdPath, ".vdmpp"), VdmContent);
-        }
-
-        // ===== クラス追加 / 画面追加 =====
-        // Markdown に対して「画面一覧の追加」または「クラスの追加」を行う。
-        // 画面一覧追加は固定の見出しを挿入し、クラスの追加はユーザーにクラス名を入力させて見出しを作る。
-        // Markdown を編集したあと、VDM++ に変換して保存する。
-        [RelayCommand]
-        private async Task AddClassHeadingAsync()
-        {
-            if (SelectedItem == null || !SelectedItem.IsFile) return;
-
-            // ユーザーに追加種類を選ばせる
-            string classType = await Shell.Current.DisplayActionSheet(
-                "追加するクラスの種類を選んでください",
-                "キャンセル", null,
-                "画面一覧の追加", "クラスの追加"
-            );
-
-            if (string.IsNullOrEmpty(classType) || classType == "キャンセル") return;
-
-            string className = null;
-            if (classType == "クラスの追加")
-            {
-                // クラス名をユーザー入力で取得する
-                string inputName = await Shell.Current.DisplayPromptAsync(
-                    "クラス追加", "クラス名を入力してください", "OK", "キャンセル", placeholder: "MyClass"
-                );
-                if (string.IsNullOrWhiteSpace(inputName)) return;
-                className = $"# {inputName}"; // Markdown の見出し形式にする
-            }
-
-            string path = SelectedItem.FullPath;
-            string currentMarkdown = File.ReadAllText(path);
-
-            var builder = new UiToMarkdownConverter();
-            // UiToMarkdownConverter に処理を委譲
-            string newMarkdown = classType switch
-            {
-                "画面一覧の追加" => builder.AddClassHeading(currentMarkdown, " 画面一覧"),
-                "クラスの追加" => builder.AddClassHeading(currentMarkdown, className),
-                _ => currentMarkdown
-            };
-
-            // ファイルを書き換え、VDM++ に変換して保存
-            File.WriteAllText(path, newMarkdown);
-
-            var converter = new MarkdownToVdmConverter();
-            string vdmContent = converter.ConvertToVdm(newMarkdown);
-            File.WriteAllText(Path.ChangeExtension(path, ".vdmpp"), vdmContent);
-
-            // ViewModel のバインディングプロパティを更新
-            MarkdownContent = newMarkdown;
-            VdmContent = vdmContent;
-
-            // 再読み込みして内部状態（GuiElements, ボタン表示等）を同期
-            LoadMarkdownAndVdm(path);
         }
 
         // 画面を追加する専用メソッド。画面名を入力して、UiToMarkdownConverter.AddScreenList を呼ぶ。
@@ -454,8 +579,6 @@ namespace _2vdm_spec_generator.ViewModel
         {
             if (SelectedItem == null || !SelectedItem.IsFile) return;
 
-            // --- ボタン候補の取得 ---
-            // GuiElements からボタン名だけを抽出し、重複を排除して ActionSheet に渡す
             var buttonNames = GuiElements?
                 .Where(g => g.Type == GuiElementType.Button && !string.IsNullOrWhiteSpace(g.Name))
                 .Select(g => g.Name.Trim())
@@ -468,16 +591,14 @@ namespace _2vdm_spec_generator.ViewModel
                 return;
             }
 
-            // --- ボタン選択 ---
             string selectedButton = await Shell.Current.DisplayActionSheet(
                 "イベントを追加するボタンを選んでください",
                 "キャンセル", null,
                 buttonNames
-            );　　　
+            );
 
             if (string.IsNullOrEmpty(selectedButton) || selectedButton == "キャンセル") return;
 
-            // --- 条件分岐の有無を確認 ---
             bool isConditional = await Shell.Current.DisplayAlert(
                 "条件分岐イベント",
                 "このイベントに条件分岐を追加しますか？",
@@ -489,50 +610,51 @@ namespace _2vdm_spec_generator.ViewModel
             var builder = new UiToMarkdownConverter();
             string newMarkdown;
 
-            // 重複チェック（マークダウン内の既存イベントを直接検索して判定）
-            // 非条件イベント: "- {button}押下 → {target}" の完全一致を避ける
             if (!isConditional)
             {
-                string eventName = await Shell.Current.DisplayPromptAsync(
-                    "イベント", "イベントの遷移先や名前を入力してください", "OK", "キャンセル", placeholder: "TargetScreen"
-                );
+                // 非条件イベントでも ConditionInputPopup を再利用する（条件欄は非表示にする）
+                var popup = new ConditionInputPopup
+                {
+                    RequireCondition = false
+                };
+                popup.UpdateRequireCondition();
+
+                var result = await Shell.Current.CurrentPage.ShowPopupAsync(popup);
+                if (result is not ValueTuple<string, string> values)
+                    return;
+
+                // popup は条件不要なので values.Item1 は null（または無視して良い）
+                string eventName = values.Item2?.Trim();
                 if (string.IsNullOrWhiteSpace(eventName)) return;
 
-                // 比較のためにトリミングして候補行を作る
-                string candidateLine = $"- {selectedButton}押下 → {eventName.Trim()}";
+                // 重複チェック：マークダウン内に既に同一の "- {button}押下 → {target}" が存在するか
+                string candidateLine = $"- {selectedButton}押下 → {eventName}";
                 var lines = currentMarkdown.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).Select(l => l.Trim()).ToArray();
-
                 if (lines.Any(l => string.Equals(l, candidateLine, StringComparison.OrdinalIgnoreCase)))
                 {
                     await Shell.Current.DisplayAlert("重複", $"同じイベント \"{candidateLine}\" は既に存在します。", "OK");
                     return;
                 }
 
-                newMarkdown = builder.AddEvent(currentMarkdown, selectedButton.Trim(), eventName.Trim());
+                newMarkdown = builder.AddEvent(currentMarkdown, selectedButton.Trim(), eventName);
             }
             else
             {
-                // 条件分岐イベント：既にそのボタンのイベントブロックが存在しないか確認
+                // 条件分岐イベント（既存ロジックを維持）
                 var lines = currentMarkdown.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
                 bool blockExists = lines.Any(l => l.TrimStart().StartsWith($"- {selectedButton}押下", StringComparison.OrdinalIgnoreCase));
 
                 if (blockExists)
                 {
-                    // 既存ブロックがある場合は重複追加を禁止（もしくは確認してブランチ追加する案がある）
                     bool addAnyway = await Shell.Current.DisplayAlert("既存のイベントがあります", $"ボタン \"{selectedButton}\" には既にイベント定義があります。新しい条件分岐を追加しますか？", "追加する", "キャンセル");
                     if (!addAnyway) return;
-
-                    // ユーザーが "追加する" を選んだ場合は既存ブロックに追加する実装は UiToMarkdownConverter にないため、
-                    // 簡易的に既存マークダウンの末尾に条件分岐ブロックを追加する（既存ブロックとの整合性は簡易処理）
                 }
 
-                // 条件分岐ブランチの入力ループ
                 var branches = new List<(string Condition, string Target)>();
                 bool addMore = true;
 
                 while (addMore)
                 {
-                    // カスタム Popup を呼び出して条件とターゲットを取得する
                     var popup = new ConditionInputPopup();
                     var result = await Shell.Current.CurrentPage.ShowPopupAsync(popup);
 
@@ -959,6 +1081,7 @@ namespace _2vdm_spec_generator.ViewModel
             {
                 if (string.IsNullOrWhiteSpace(lines[j])) { j++; continue; }
                 var t = lines[j].TrimStart();
+                // stop if next top-level item or heading
                 if (t.StartsWith("- ") && !lines[j].StartsWith("  ")) break;
                 if (t.StartsWith("#")) break;
                 j++;
@@ -1003,7 +1126,7 @@ namespace _2vdm_spec_generator.ViewModel
 
             lines.RemoveAt(removeIndex);
 
-            // ブロック内に分岐行が残っていない場合は親イベントヘッダも削除する（要件に応じて）
+            // ブロック内に分岐行が残っていない場合は親イベントヘッダも削除
             bool anyBranchLeft = false;
             for (int k = start + 1; k < j; k++)
             {
@@ -1045,6 +1168,79 @@ namespace _2vdm_spec_generator.ViewModel
 
         // 追加：選択された分岐インデックス（null のときは分岐未選択）
         [ObservableProperty] private int? selectedBranchIndex;
+
+        /// <summary>
+        /// 指定された画面名に対応する Markdown (.md) ファイルを検索して開く。
+        /// - SelectedFolderPath 配下を再帰検索する。
+        /// - まずファイル名（拡張子除く）一致を探し、見つからなければファイル内の見出しで検索する。
+        /// - 見つかったら LoadMarkdownAndVdm を呼んで開く。
+        /// </summary>
+        public async Task OpenFileForScreen(string screenName)
+        {
+            if (string.IsNullOrWhiteSpace(screenName)) return;
+            if (string.IsNullOrWhiteSpace(SelectedFolderPath)) 
+            {
+                await Application.Current.MainPage.DisplayAlert("エラー", "フォルダが選択されていません。", "OK");
+                return;
+            }
+
+            try
+            {
+                // 1) ファイル名（拡張子なし）で一致するものを探す
+                var mdFiles = Directory.GetFiles(SelectedFolderPath, "*.md", SearchOption.AllDirectories);
+                var byName = mdFiles.FirstOrDefault(f => string.Equals(Path.GetFileNameWithoutExtension(f), screenName, StringComparison.OrdinalIgnoreCase));
+                string found = byName;
+
+                // 2) 見つからなければ、ファイル内の先頭見出しを探す（"# " または "## "）
+                if (found == null)
+                {
+                    foreach (var f in mdFiles)
+                    {
+                        // 最初の数行だけ読む（大きいファイル対策）
+                        var lines = File.ReadLines(f).Take(30);
+                        foreach (var line in lines)
+                        {
+                            var trimmed = line.Trim();
+                            if ((trimmed.StartsWith("# ") || trimmed.StartsWith("## ")) && trimmed.IndexOf(screenName, StringComparison.OrdinalIgnoreCase) >= 0)
+                            {
+                                found = f;
+                                break;
+                            }
+                        }
+                        if (found != null) break;
+                    }
+                }
+
+                if (found == null)
+                {
+                    await Application.Current.MainPage.DisplayAlert("見つかりません", $"\"{screenName}\" に対応するファイルが見つかりませんでした。", "OK");
+                    return;
+                }
+
+                // SelectedItem を更新してファイルをロードする（FolderItems を経由しなくても LoadMarkdownAndVdm を呼べばよい）
+                var existing = FolderItems.FirstOrDefault(f => string.Equals(f.FullPath, found, StringComparison.OrdinalIgnoreCase));
+if (existing != null)
+{
+    SelectedItem = existing;
+}
+else
+{
+    SelectedItem = new FolderItem
+    {
+        Name = Path.GetFileName(found),
+        FullPath = found,
+        Level = 0
+    };
+}
+
+// LoadMarkdownAndVdm は同期的にファイルを読み込み UI を更新するため直接呼ぶ
+LoadMarkdownAndVdm(found);
+            }
+            catch (Exception ex)
+            {
+                await Application.Current.MainPage.DisplayAlert("エラー", $"ファイル検索中にエラーが発生しました: {ex.Message}", "OK");
+            }
+        }
     }
 
     /// <summary>
@@ -1061,20 +1257,3 @@ namespace _2vdm_spec_generator.ViewModel
         // OnMarkdownContentChanged の最後に LoadGuiPositionsToElements を呼ぶようにしてください
        
     }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

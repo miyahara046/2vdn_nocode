@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.IO;
 using _2vdm_spec_generator.ViewModel;
 
 namespace _2vdm_spec_generator.Services
@@ -39,11 +40,19 @@ namespace _2vdm_spec_generator.Services
         /// <summary>
         /// 画面一覧に画面名を追加する。
         /// - ファイル上の 2 行目を必ず空行にする（視覚的区切りのため）。
-        /// - 3 行目以降に "- {screenName}" を追加する。
+        /// - 3 行目以降に "- {screenName}" を追加する（既存に同名がなければ）。
         /// </summary>
         public string AddScreenList(string markdown, string screenName)
         {
             var lines = markdown.Split(Environment.NewLine).ToList();
+
+            // 既に同名の項目が存在するかチェック（大文字小文字を無視）
+            var targetItem = $"- {screenName}".Trim();
+            if (lines.Any(l => string.Equals(l?.Trim(), targetItem, StringComparison.OrdinalIgnoreCase)))
+            {
+                lines = NormalizeEmptyLines(lines);
+                return string.Join(Environment.NewLine, lines);
+            }
 
             // 2行目を必ず空行にする
             if (lines.Count < 2)
@@ -59,6 +68,7 @@ namespace _2vdm_spec_generator.Services
             lines.Add($"- {screenName}");
 
             lines = NormalizeEmptyLines(lines);
+            // ScreenList doesn't affect ordering of button/event sections, so no reorder call here.
             return string.Join(Environment.NewLine, lines);
         }
 
@@ -81,18 +91,10 @@ namespace _2vdm_spec_generator.Services
             var lines = new List<string>(markdown.Split(newLineSeparators, StringSplitOptions.None));
 
             const string targetHeading = "### 有効ボタン一覧";
-            int buttonListHeadingIndex = -1;
-            int searchLimit = Math.Min(5, lines.Count);
+            const string eventHeading = "### イベント一覧";
 
-            // 1行目から最大5行目まで (インデックス0から4まで) を探索
-            for (int i = 0; i < searchLimit; i++)
-            {
-                if (lines[i].Trim() == targetHeading)
-                {
-                    buttonListHeadingIndex = i;
-                    break;
-                }
-            }
+            // ファイル全体から見出しを探索（先頭5行に限定しない）
+            int buttonListHeadingIndex = lines.FindIndex(l => l.Trim() == targetHeading);
 
             if (buttonListHeadingIndex != -1)
             {
@@ -111,7 +113,6 @@ namespace _2vdm_spec_generator.Services
                     // 次の見出しが見つかった場合は、その直前の行に挿入
                     else if (lines[i].Trim().StartsWith("#") && !lines[i].Trim().StartsWith("-") && !lines[i].Trim().StartsWith("*"))
                     {
-                        // 見出しの直前の行に挿入
                         insertionIndex = i;
                         break;
                     }
@@ -127,43 +128,55 @@ namespace _2vdm_spec_generator.Services
                 lines.Insert(insertionIndex, $"- {buttonName}");
             }
             else
-            // ### 有効ボタン一覧 が見つからなかった場合
             {
-                // 最初の4行（インデックス0から3）の中で、テキストが入っている最後の行のインデックスを探す
-                int lastNonEmptyIndex = -1;
-                for (int i = 0; i < Math.Min(lines.Count, 4); i++)
-                {
-                    // Trim()して空文字でなければ、その行がテキストが入っている行
-                    if (!string.IsNullOrWhiteSpace(lines[i]))
-                    {
-                        lastNonEmptyIndex = i;
-                    }
-                }
+                // ### 有効ボタン一覧 が見つからなかった場合、
+                // まず ### イベント一覧 があるか調べ、あればその直前にセクションを追加する（ボタン一覧はイベントの前に置く）
+                int eventHeadingIndex = lines.FindIndex(l => l.Trim() == eventHeading);
+                var newSection = new List<string> { targetHeading, $"- {buttonName}", string.Empty };
 
-                // テキストが入っている最後の行の次の次の行に挿入
-                int insertionIndex = lastNonEmptyIndex + 2;
-
-                // 挿入位置が存在しない場合は、行を追加する
-                while (lines.Count < insertionIndex)
+                if (eventHeadingIndex != -1)
                 {
-                    lines.Add(string.Empty);
-                }
-
-                // 既に直前が空行であれば二重にしない
-                if (insertionIndex > 0 && insertionIndex - 1 < lines.Count && string.IsNullOrWhiteSpace(lines[insertionIndex - 1]))
-                {
-                    // そのまま見出しを挿入
-                    lines.Insert(insertionIndex, targetHeading);
-                    lines.Insert(insertionIndex + 1, $"- {buttonName}");
+                    // イベント見出しの直前に挿入
+                    lines.InsertRange(eventHeadingIndex, newSection);
                 }
                 else
                 {
-                    lines.Insert(insertionIndex, targetHeading);
-                    lines.Insert(insertionIndex + 1, $"- {buttonName}");
+                    // イベント見出しも無ければ、従来のフォールバック位置（先頭付近）に挿入する
+                    // 最初の4行の中で、テキストが入っている最後の行のインデックスを探す
+                    int lastNonEmptyIndex = -1;
+                    for (int i = 0; i < Math.Min(lines.Count, 4); i++)
+                    {
+                        if (!string.IsNullOrWhiteSpace(lines[i]))
+                        {
+                            lastNonEmptyIndex = i;
+                        }
+                    }
+
+                    // テキストが入っている最後の行の次の次の行に挿入
+                    int insertionIndex = lastNonEmptyIndex + 2;
+
+                    // 挿入位置が存在しない場合は、行を追加する
+                    while (lines.Count < insertionIndex)
+                    {
+                        lines.Add(string.Empty);
+                    }
+
+                    // 挿入
+                    if (insertionIndex > 0 && insertionIndex - 1 < lines.Count && string.IsNullOrWhiteSpace(lines[insertionIndex - 1]))
+                    {
+                        lines.Insert(insertionIndex, targetHeading);
+                        lines.Insert(insertionIndex + 1, $"- {buttonName}");
+                    }
+                    else
+                    {
+                        lines.Insert(insertionIndex, targetHeading);
+                        lines.Insert(insertionIndex + 1, $"- {buttonName}");
+                    }
                 }
             }
 
             lines = NormalizeEmptyLines(lines);
+            lines = EnsureButtonBeforeEvent(lines);
             return string.Join(Environment.NewLine, lines);
         }
 
@@ -236,6 +249,7 @@ namespace _2vdm_spec_generator.Services
             lines.Insert(insertionIndex, newLine);
 
             lines = NormalizeEmptyLines(lines);
+            lines = EnsureButtonBeforeEvent(lines);
             return string.Join(Environment.NewLine, lines);
         }
 
@@ -342,9 +356,9 @@ namespace _2vdm_spec_generator.Services
                     }
 
                     lines = NormalizeEmptyLines(lines);
+                    lines = EnsureButtonBeforeEvent(lines);
                     return string.Join(Environment.NewLine, lines);
                 }
-                // 親が見つからなければ以下で新規追加（既存の動作）
             }
             else
             {
@@ -384,6 +398,7 @@ namespace _2vdm_spec_generator.Services
             }
 
             lines = NormalizeEmptyLines(lines);
+            lines = EnsureButtonBeforeEvent(lines);
             return string.Join(Environment.NewLine, lines);
         }
 
@@ -499,6 +514,7 @@ namespace _2vdm_spec_generator.Services
             }
 
             lines = NormalizeEmptyLines(lines);
+            lines = EnsureButtonBeforeEvent(lines);
             return string.Join(Environment.NewLine, lines);
         }
 
@@ -506,16 +522,6 @@ namespace _2vdm_spec_generator.Services
         /// <summary>
         /// Markdown ファイルの中で、GUI 上の要素位置（elements に基づく Y 順）に合わせて
         /// 「有効ボタン一覧」と「イベント一覧」の順序を再構築してファイルへ書き戻すユーティリティ。
-        /// 
-        /// 実装のポイント:
-        /// - ファイルを丸ごと読み込み、行単位で操作した後、上書き保存する（File I/O を伴う）。
-        /// - ReplaceListSection / ReplaceEventSection を使ってそれぞれのセクションを置換する。
-        /// - 書き戻しは UTF-8 (System.Text.Encoding.UTF8) を用いる。
-        /// 
-        /// 注意:
-        /// - ファイル操作で例外が発生する可能性がある（アクセス権、同時書き込み等）。呼び出し側で例外対処を行うか、
-        ///   このメソッドを try/catch で囲むことを推奨する。
-        /// - elements の内容（Name 非 null、Y 座標など）に依存して動作するため、事前検証を行っておくと安全。
         /// </summary>
         public static void UpdateMarkdownOrder(string markdownFilePath, IEnumerable<GuiElement> elements)
         {
@@ -624,7 +630,8 @@ namespace _2vdm_spec_generator.Services
             {
                 var t = lines[end];
                 if (string.IsNullOrWhiteSpace(t)) { end++; break; }
-                if (t.TrimStart().StartsWith("### ") || t.TrimStart().StartsWith("## ") || t.TrimStart().StartsWith("# ")) break;
+                if (t.TrimStart().StartsWith("### ") || t.TrimStart().StartsWith("## ") || t.TrimStart().StartsWith("# "))
+                    break;
                 end++;
             }
 
@@ -837,7 +844,46 @@ namespace _2vdm_spec_generator.Services
 
             return result;
         }
+
+        /// <summary>
+        /// 「### 有効ボタン一覧」が存在し、かつ「### イベント一覧」が存在する場合に
+        /// ボタン一覧セクションが必ずイベント一覧より前に来るようにする。
+        /// </summary>
+        private static List<string> EnsureButtonBeforeEvent(List<string> lines)
+        {
+            if (lines == null) return lines;
+
+            const string buttonHeading = "### 有効ボタン一覧";
+            const string eventHeading = "### イベント一覧";
+
+            int buttonIdx = lines.FindIndex(l => l.Trim() == buttonHeading);
+            int eventIdx = lines.FindIndex(l => l.Trim() == eventHeading);
+
+            if (buttonIdx == -1 || eventIdx == -1) return lines;
+            if (buttonIdx < eventIdx) return lines; // 既に正しい順序
+
+            // 抽出: buttonIdx からセクション終端まで
+            int end = buttonIdx + 1;
+            while (end < lines.Count)
+            {
+                var t = lines[end];
+                if (string.IsNullOrWhiteSpace(t))
+                {
+                    end++; // 空行も含めて区切りとする（元の実装パターンに合わせる）
+                    break;
+                }
+                if (t.TrimStart().StartsWith("### ") || t.TrimStart().StartsWith("## ") || t.TrimStart().StartsWith("# "))
+                    break;
+                end++;
+            }
+
+            var section = lines.GetRange(buttonIdx, end - buttonIdx);
+            lines.RemoveRange(buttonIdx, end - buttonIdx);
+
+            // eventIdx は元々 buttonIdx より小さいので、削除後も同じ位置にある
+            lines.InsertRange(eventIdx, section);
+
+            return NormalizeEmptyLines(lines);
+        }
     }
-
-
 }

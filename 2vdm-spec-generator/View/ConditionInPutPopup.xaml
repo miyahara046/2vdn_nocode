@@ -4,49 +4,66 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
     xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
     x:Class="_2vdm_spec_generator.View.ConditionInputPopup"
-    Size="350,250"
+    Size="420,380"
     CanBeDismissedByTappingOutsideOfPopup="False">
 
-    <VerticalStackLayout Padding="10" Spacing="6" BackgroundColor="{AppThemeBinding Light=#FFFFFF, Dark=#1E1E1E}">
-        <Label Text="条件:" FontAttributes="Bold" FontSize="15" TextColor="{AppThemeBinding Light=#222, Dark=#EEE}" />
+    <!-- 全体を余裕あるパディングで包み、スクロール可能にする -->
+    <Frame Padding="0" HasShadow="False" BackgroundColor="{AppThemeBinding Light=#FFFFFF, Dark=#1E1E1E}">
+        <ScrollView>
+            <VerticalStackLayout Padding="12" Spacing="8">
+                <Label Text="条件:" FontAttributes="Bold" FontSize="15" TextColor="{AppThemeBinding Light=#222, Dark=#EEE}" />
 
-        <!-- 条件入力欄（余白最小・明確な枠） -->
-        <Frame CornerRadius="5" BorderColor="{AppThemeBinding Light=#888, Dark=#555}" Padding="2" HasShadow="False" Margin="0">
-            <Entry x:Name="ConditionEntry"
-                   Placeholder="例: 表示部に1が入力されている"
-                   TextColor="{AppThemeBinding Light=#000, Dark=#FFF}"
-                   PlaceholderColor="{AppThemeBinding Light=#999, Dark=#AAA}"
-                   FontSize="14" />
-        </Frame>
+                <Frame CornerRadius="6" BorderColor="{AppThemeBinding Light=#888, Dark=#555}" Padding="4" HasShadow="False" Margin="0">
+                    <Entry x:Name="ConditionEntry"
+                           Placeholder="例: 表示部に1が入力されている"
+                           TextColor="{AppThemeBinding Light=#000, Dark=#FFF}"
+                           PlaceholderColor="{AppThemeBinding Light=#999, Dark=#AAA}"
+                           FontSize="14" />
+                </Frame>
 
-        <Label Text="遷移先:" FontAttributes="Bold" FontSize="15" TextColor="{AppThemeBinding Light=#222, Dark=#EEE}" />
+                <Label Text="種別 (タブを切り替えて入力項目を変えます):" FontAttributes="Bold" FontSize="14" TextColor="{AppThemeBinding Light=#222, Dark=#EEE}" />
 
-        <!-- 遷移先入力欄（余白最小） -->
-        <Frame CornerRadius="5" BorderColor="{AppThemeBinding Light=#888, Dark=#555}" Padding="2" HasShadow="False" Margin="0">
-            <Entry x:Name="TargetEntry"
-                   Placeholder="例: 画面Cへ"
-                   TextColor="{AppThemeBinding Light=#000, Dark=#FFF}"
-                   PlaceholderColor="{AppThemeBinding Light=#999, Dark=#AAA}"
-                   FontSize="14" />
-        </Frame>
+                <!-- タブ風ボタン群 -->
+                <HorizontalStackLayout Spacing="6" HorizontalOptions="Fill">
+                    <Button x:Name="BtnAdd" Text="追加" CornerRadius="6" HorizontalOptions="FillAndExpand" Clicked="OnTabClicked" />
+                    <Button x:Name="BtnTransition" Text="遷移" CornerRadius="6" HorizontalOptions="FillAndExpand" Clicked="OnTabClicked" />
+                    <Button x:Name="BtnDelete" Text="削除" CornerRadius="6" HorizontalOptions="FillAndExpand" Clicked="OnTabClicked" />
+                    <Button x:Name="BtnOther" Text="その他" CornerRadius="6" HorizontalOptions="FillAndExpand" Clicked="OnTabClicked" />
+                </HorizontalStackLayout>
 
-        <!-- ボタン -->
-        <HorizontalStackLayout HorizontalOptions="End" Spacing="10" Margin="0,6,0,0">
-            <Button Text="OK"
-         BackgroundColor="{AppThemeBinding Light=#007AFF, Dark=#1E88E5}"
-         TextColor="White"
-         CornerRadius="5"
-         HeightRequest="20"
-         WidthRequest="80"
-         Clicked="OnOkClicked" />
+                <!-- 遷移先 / 操作内容 入力 -->
+                <Label Text="遷移先 / 操作内容:" FontAttributes="Bold" FontSize="15" TextColor="{AppThemeBinding Light=#222, Dark=#EEE}" />
 
-            <Button Text="キャンセル"
-                    BackgroundColor="{AppThemeBinding Light=#E0E0E0, Dark=#444}"
-                    TextColor="{AppThemeBinding Light=#333, Dark=#EEE}"
-                    CornerRadius="5"
-                    HeightRequest="20"
-                    WidthRequest="80"
-                    Clicked="OnCancelClicked" />
-        </HorizontalStackLayout>
-    </VerticalStackLayout>
+                <Frame CornerRadius="6" BorderColor="{AppThemeBinding Light=#888, Dark=#555}" Padding="4" HasShadow="False" Margin="0">
+                    <Entry x:Name="TargetEntry"
+                           Placeholder="例: 画面Cへ / 表示部に1を追加"
+                           TextColor="{AppThemeBinding Light=#000, Dark=#FFF}"
+                           PlaceholderColor="{AppThemeBinding Light=#999, Dark=#AAA}"
+                           FontSize="14" />
+                </Frame>
+
+                <!-- ヒント行（選択中タブの補足） -->
+                <Label x:Name="HintLabel" FontSize="12" TextColor="{AppThemeBinding Light=#666, Dark=#BBB}" />
+
+                <!-- ボタン：高さを確保し右寄せ -->
+                <HorizontalStackLayout HorizontalOptions="End" Spacing="10" Margin="0,8,0,0">
+                    <Button Text="OK"
+                            BackgroundColor="{AppThemeBinding Light=#007AFF, Dark=#1E88E5}"
+                            TextColor="White"
+                            CornerRadius="6"
+                            HeightRequest="40"
+                            WidthRequest="100"
+                            Clicked="OnOkClicked" />
+
+                    <Button Text="キャンセル"
+                            BackgroundColor="{AppThemeBinding Light=#E0E0E0, Dark=#444}"
+                            TextColor="{AppThemeBinding Light=#333, Dark=#EEE}"
+                            CornerRadius="6"
+                            HeightRequest="40"
+                            WidthRequest="100"
+                            Clicked="OnCancelClicked" />
+                </HorizontalStackLayout>
+            </VerticalStackLayout>
+        </ScrollView>
+    </Frame>
 </toolkit:Popup>

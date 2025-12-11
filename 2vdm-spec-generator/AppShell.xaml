@@ -10,7 +10,7 @@
     <Shell.TitleView>
         <Grid ColumnDefinitions="*"
               VerticalOptions="Center">
-            <Label Text="MD2VDM++Spec"
+            <Label Text="2VDM++Spec"
                    VerticalOptions="Center"
                    HorizontalOptions="Center"
                    TranslationX="-110"
