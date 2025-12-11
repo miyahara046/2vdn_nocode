@@ -308,7 +308,7 @@ namespace _2vdm_spec_generator.ViewModel
             if (screenListPath != null)
             {
                 // 画面一覧が既にある場合は種類選択を行わず「クラスの追加」を固定
-                classType = "クラスの追加";
+                classType = "画面クラスの追加";
             }
             else
             {
@@ -316,7 +316,7 @@ namespace _2vdm_spec_generator.ViewModel
                 classType = await Shell.Current.DisplayActionSheet(
                     "追加するクラスの種類を選んでください",
                     "キャンセル", null,
-                    "画面一覧の追加", "クラスの追加"
+                    "画面一覧クラスの追加", "画面クラスの追加"
                 );
 
                 if (string.IsNullOrEmpty(classType) || classType == "キャンセル") return;
@@ -324,11 +324,11 @@ namespace _2vdm_spec_generator.ViewModel
 
             string className = null;
             string inputName = null;
-            if (classType == "クラスの追加")
+            if (classType == "画面クラスの追加")
             {
                 // ユーザー入力か自動遷移（画面一覧がある場合）どちらでもクラス名を取得する
                 string temp = await Shell.Current.DisplayPromptAsync(
-                    "クラス追加", "クラス名を入力してください", "OK", "キャンセル", placeholder: "MyClass"
+                    "画面クラス追加", "クラス名を入力してください", "OK", "キャンセル", placeholder: "MyClass"
                 );
                 if (string.IsNullOrWhiteSpace(temp)) return;
                 inputName = temp.Trim();
@@ -341,8 +341,8 @@ namespace _2vdm_spec_generator.ViewModel
             var builder = new UiToMarkdownConverter();
             string newMarkdown = classType switch
             {
-                "画面一覧の追加" => builder.AddClassHeading(currentMarkdown, " 画面一覧"),
-                "クラスの追加" => builder.AddClassHeading(currentMarkdown, className),
+                "画面一覧クラスの追加" => builder.AddClassHeading(currentMarkdown, " 画面一覧"),
+                "画面クラスの追加" => builder.AddClassHeading(currentMarkdown, className),
                 _ => currentMarkdown
             };
 
@@ -360,7 +360,7 @@ namespace _2vdm_spec_generator.ViewModel
             LoadMarkdownAndVdm(path);
 
             // クラス追加時は画面一覧に同名がなければ追加
-            if (classType == "クラスの追加" && !string.IsNullOrWhiteSpace(inputName))
+            if (classType == "画面クラスの追加" && !string.IsNullOrWhiteSpace(inputName))
             {
                 await EnsureScreenListHasClass(inputName);
             }
