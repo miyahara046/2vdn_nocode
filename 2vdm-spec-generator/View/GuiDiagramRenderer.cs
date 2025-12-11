@@ -9,6 +9,7 @@ using Microsoft.Maui.ApplicationModel; // MainThread
 #if WINDOWS
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Input;
+using Windows.UI.Input; // for PointerPoint etc (API surfaces)
 #endif
 
 namespace _2vdm_spec_generator.View
@@ -28,6 +29,9 @@ namespace _2vdm_spec_generator.View
         public Action<IEnumerable<GuiElement>> PositionsChanged { get; set; }
         public Action<GuiElement> NodeClicked { get; set; }
         public Action<GuiElement, int?> BranchClicked { get; set; }
+
+        // 追加: 右クリックイベント
+        public Action<GuiElement> NodeRightClicked { get; set; }
 
         public GuiDiagramRenderer()
         {
@@ -77,7 +81,72 @@ namespace _2vdm_spec_generator.View
         {
             if (!(sender is UIElement ui)) return;
             var pt = e.GetCurrentPoint(ui).Position;
-            TryStartDrag((float)pt.X, (float)pt.Y);
+            // 右クリック判定
+            var props = e.GetCurrentPoint(ui).Properties;
+            bool isRight = props.IsRightButtonPressed;
+
+            if (isRight)
+            {
+                // 右クリック時はドラッグ開始せずヒットテストのみ行い、該当 Screen ノードを報告する
+                float px = (float)pt.X;
+                float py = (float)pt.Y;
+
+                // ノード本体のヒットテスト
+                foreach (var el in _drawable.Elements.AsEnumerable().Reverse())
+                {
+                    var rect = new RectF(el.X, el.Y, GuiDiagramDrawable.NodeWidth, GuiDiagramDrawable.NodeHeight);
+                    if (rect.Contains(px, py))
+                    {
+                        if (el.Type == GuiElementType.Screen)
+                        {
+                            NodeRightClicked?.Invoke(el);
+                            e.Handled = true;
+                            return;
+                        }
+                        // 画面以外は無視する（必要なら拡張）
+                    }
+                }
+
+                // ブランチ領域のヒットテスト（ダイヤモンドや条件領域）
+                if (_drawable.BranchVisuals != null && _drawable.BranchVisuals.Count > 0)
+                {
+                    float condW = GuiDiagramDrawable.NodeWidth * 0.9f;
+                    float condH = GuiDiagramDrawable.NodeHeight * 0.7f;
+                    float diamondW = GuiDiagramDrawable.NodeWidth * 0.8f;
+                    float diamondH = GuiDiagramDrawable.NodeHeight * 0.8f;
+                    float midGap = 24f;
+                    float condRightShift = 40f;
+
+                    foreach (var bv in _drawable.BranchVisuals)
+                    {
+                        float condCenterX = bv.CenterX - (diamondW / 2f + midGap / 2f + condW / 2f) + condRightShift;
+                        var condCenter = new PointF(condCenterX, bv.CenterY);
+                        var condRect = new RectF(condCenter.X - condW / 2f, condCenter.Y - condH / 2f, condW, condH);
+
+                        float targetCenterX = bv.CenterX + (diamondW / 2f + midGap / 2f);
+                        var targetCenter = new PointF(targetCenterX, bv.CenterY);
+                        var diamondRect = new RectF(targetCenter.X - diamondW / 2f, targetCenter.Y - diamondH / 2f, diamondW, diamondH);
+
+                        if (condRect.Contains(px, py) || diamondRect.Contains(px, py))
+                        {
+                            var parent = bv.ParentEvent;
+                            if (parent != null && parent.Type == GuiElementType.Screen)
+                            {
+                                NodeRightClicked?.Invoke(parent);
+                                e.Handled = true;
+                                return;
+                            }
+                        }
+                    }
+                }
+
+                // 右クリックで対象がなければ何もしない
+                return;
+            }
+
+            // 右クリックでない場合は既存の処理（ドラッグ開始）を行う
+            var pt2 = e.GetCurrentPoint(ui).Position;
+            TryStartDrag((float)pt2.X, (float)pt2.Y);
         }
 
         private void Platform_PointerMoved(object sender, PointerRoutedEventArgs e)

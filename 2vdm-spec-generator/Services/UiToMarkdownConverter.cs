@@ -39,11 +39,20 @@ namespace _2vdm_spec_generator.Services
         /// <summary>
         /// 画面一覧に画面名を追加する。
         /// - ファイル上の 2 行目を必ず空行にする（視覚的区切りのため）。
-        /// - 3 行目以降に "- {screenName}" を追加する。
+        /// - 3 行目以降に "- {screenName}" を追加する（既存に同名がなければ）。
         /// </summary>
         public string AddScreenList(string markdown, string screenName)
         {
             var lines = markdown.Split(Environment.NewLine).ToList();
+
+            // 既に同名の項目が存在するかチェック（大文字小文字を無視）
+            var targetItem = $"- {screenName}".Trim();
+            if (lines.Any(l => string.Equals(l?.Trim(), targetItem, StringComparison.OrdinalIgnoreCase)))
+            {
+                // 重複があれば元のマークダウンを正規化して返す（何も追加しない）
+                lines = NormalizeEmptyLines(lines);
+                return string.Join(Environment.NewLine, lines);
+            }
 
             // 2行目を必ず空行にする
             if (lines.Count < 2)

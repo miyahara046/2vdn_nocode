@@ -75,6 +75,16 @@ namespace _2vdm_spec_generator
                         vm.SelectedBranchIndex = index;
                     });
                 };
+
+                // 追加：右クリックで Screen ノードを開く
+                _diagramRenderer.NodeRightClicked = el =>
+                {
+                    // 非同期メソッドを fire-and-forget で呼び出す（UI スレッドから起動）
+                    MainThread.BeginInvokeOnMainThread(() =>
+                    {
+                        _ = vm.OpenFileForScreen(el?.Name);
+                    });
+                };
             }
         }
 
