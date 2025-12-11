@@ -41,11 +41,18 @@ namespace _2vdm_spec_generator.View
             {
                 Drawable = _drawable,
                 BackgroundColor = Colors.White,
-                InputTransparent = false
+                InputTransparent = false,
+                // 横幅が親に引き伸ばされないように Start にする（ScrollView が横スクロールを検出しやすくする）
+                HorizontalOptions = LayoutOptions.Start,
+                VerticalOptions = LayoutOptions.Start
             };
 
             // 内部で ScrollView を持たず、親（XAML）の ScrollView に任せる
             Content = _graphicsView;
+
+            // 自身も Start にして親 ScrollView の測定が正しく働くようにする
+            this.HorizontalOptions = LayoutOptions.Start;
+            this.VerticalOptions = LayoutOptions.Start;
 
             // ハンドラー変更イベントは GraphicsView のみに登録（プラットフォーム入力はここでフック）
             _graphicsView.HandlerChanged += GraphicsView_HandlerChanged;
@@ -466,10 +473,20 @@ namespace _2vdm_spec_generator.View
                 maxY = _drawable.Elements.Max(e => e.Y + GuiDiagramDrawable.NodeHeight);
 
             var height = Math.Max(maxY + 120f, 300f);
-            var width = 1000f;
+
+            // 横幅はコンテンツに応じて変える（必要に応じて計算式を調整）
+            var width = Math.Max(1000f, GuiDiagramDrawable.NodeWidth * 4f + 200f);
 
             _graphicsView.HeightRequest = height;
             _graphicsView.WidthRequest = width;
+
+            // 重要: ContentView / GraphicsView を Start にしているため、ここで自身の要求サイズを設定して
+            // 親の ScrollView が横幅を超えていると判定できるようにする
+            this.WidthRequest = width;
+            this.HeightRequest = height;
+
+            _graphicsView.HorizontalOptions = LayoutOptions.Start;
+            _graphicsView.VerticalOptions = LayoutOptions.Start;
 
             InvalidateMeasure();
             _graphicsView.Invalidate();
