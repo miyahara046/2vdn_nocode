@@ -46,34 +46,38 @@
 
         <!-- 左側：ファイル一覧 -->
         <Border Grid.Row="1" Grid.Column="0" Stroke="Gray" StrokeThickness="1" Padding="5" Margin="5">
-            <CollectionView ItemsSource="{Binding FolderItems}">
+            <CollectionView ItemsSource="{Binding FolderItems}"
+                            SelectionMode="Single"
+                            SelectedItem="{Binding SelectedItem, Mode=TwoWay}">
                 <CollectionView.ItemTemplate>
                     <DataTemplate x:DataType="vm:FolderItem">
-                        <HorizontalStackLayout Padding="0,2" IsVisible="{Binding IsVisible}" Spacing="2">
+                        <HorizontalStackLayout Padding="0,2"
+                                               IsVisible="{Binding IsVisible}"
+                                               Spacing="2"
+                                               BackgroundColor="{Binding ., Converter={StaticResource SelectedToColorConverter}, ConverterParameter={x:Reference Page}}">
+                            <!-- 全体をタップ可能にするため Gesture をここに移動 -->
+                            <HorizontalStackLayout.GestureRecognizers>
+                                <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type vm:NoCodePageViewModel}}, Path=SelectItemCommand}"
+                                                      CommandParameter="{Binding}" />
+                            </HorizontalStackLayout.GestureRecognizers>
 
-                            <!-- フォルダ折りたたみラベル -->
+                            <!-- フォルダ折りたたみラベル（ここは個別で折りたたみ処理を持つ） -->
                             <Label Text="{Binding IsExpanded, Converter={StaticResource BoolToExpandCollapseConverter}}"
                                    IsVisible="{Binding IsFolder}"
                                    FontSize="15"
                                    VerticalOptions="Center"
-                                       TextColor="Black">
+                                   TextColor="Black">
                                 <Label.GestureRecognizers>
                                     <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type vm:NoCodePageViewModel}}, Path=ToggleExpandCommand}"
                                                           CommandParameter="{Binding}" />
                                 </Label.GestureRecognizers>
                             </Label>
 
-                            <!-- ファイル / フォルダ名 -->
+                            <!-- ファイル / フォルダ名（ラベルは横幅いっぱいに） -->
                             <Label Text="{Binding Name}"
                                    VerticalOptions="Center"
                                    Padding="{Binding Level, Converter={StaticResource LevelToIndentConverter}}"
-                                   BackgroundColor="{Binding ., Converter={StaticResource SelectedToColorConverter}, ConverterParameter={x:Reference Page}}"> 
-                                <Label.GestureRecognizers>
-                                    <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type vm:NoCodePageViewModel}}, Path=SelectItemCommand}"
-                                                          CommandParameter="{Binding}" />
-                                </Label.GestureRecognizers>
-                            </Label>
-
+                                   HorizontalOptions="FillAndExpand" />
                         </HorizontalStackLayout>
                     </DataTemplate>
                 </CollectionView.ItemTemplate>
@@ -84,7 +88,8 @@
         <!-- 中央：GUI表示（ダイアグラム） -->
         <Border Grid.Row="1" Grid.Column="1" Stroke="Gray" StrokeThickness="1" Padding="10" Margin="5">
             <Grid RowDefinitions="Auto,*">
-                <Label Text="Condition Transition Map" FontSize="16" FontAttributes="Bold" Margin="0,0,0,5"/>
+                <!-- ここをバインドに変更 -->
+                <Label Text="{Binding DiagramTitle}" FontSize="16" FontAttributes="Bold" Margin="0,0,0,5"/>
 
                 <!-- ScrollView を縦横スクロール可能に変更 -->
                 <ScrollView Grid.Row="1" VerticalOptions="FillAndExpand" HorizontalOptions="FillAndExpand" Orientation="Both">

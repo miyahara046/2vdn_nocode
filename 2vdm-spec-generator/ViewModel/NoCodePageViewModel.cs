@@ -65,6 +65,10 @@ namespace _2vdm_spec_generator.ViewModel
         /// </summary>
         [ObservableProperty] private bool isFolderSelected = true;
 
+        [ObservableProperty]
+        private string diagramTitle = "Condition Transition Map";
+
+
         /// <summary>
         /// Markdown から変換された GUI 要素一覧。UI 側のドラッグ／選択などの操作対象となる。
         /// ObservableCollection にしておくことで要素追加/削除が UI に反映される。
@@ -133,6 +137,34 @@ namespace _2vdm_spec_generator.ViewModel
             // ルート直下の .md ファイルも追加する（拡張子チェックは厳密に小文字化している）
             foreach (var file in Directory.GetFiles(SelectedFolderPath).Where(f => Path.GetExtension(f) == ".md"))
                 FolderItems.Add(new FolderItem { Name = Path.GetFileName(file), FullPath = file, Level = 0 });
+        }
+
+        // 追加: Markdown から表示用タイトルを抽出するヘルパー
+        private string ExtractDiagramTitleFromMarkdown(string markdown, FolderItem fileItem)
+        {
+            const string defaultTitle = "Condition Transition Map";
+            if (fileItem == null) return defaultTitle;
+
+            if (string.IsNullOrWhiteSpace(markdown))
+                return Path.GetFileNameWithoutExtension(fileItem.FullPath) ?? defaultTitle;
+
+            var lines = markdown.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+            foreach (var l in lines)
+            {
+                var t = l?.Trim();
+                if (string.IsNullOrEmpty(t)) continue;
+                // 見出しを検出（"# " または "## "）
+                if (t.StartsWith("# ") || t.StartsWith("## "))
+                {
+                    var title = t.TrimStart('#').Trim();
+                    // "# 画面一覧" は既定表示にする（既存ロジックと整合）
+                    if (string.Equals(title, "画面一覧", StringComparison.OrdinalIgnoreCase))
+                        return defaultTitle;
+                    return title;
+                }
+            }
+
+            return Path.GetFileNameWithoutExtension(fileItem.FullPath) ?? defaultTitle;
         }
 
         /// <summary>
@@ -246,6 +278,10 @@ namespace _2vdm_spec_generator.ViewModel
 
             // JSON から位置を反映（.positions.json があれば GUI 要素に位置を適用する）
             LoadGuiPositionsToElements();
+
+            // ここで DiagramTitle を更新（SelectedItem があればそれを使う）
+            var displayItem = SelectedItem ?? new FolderItem { FullPath = path, Name = Path.GetFileName(path), Level = 0 };
+            DiagramTitle = ExtractDiagramTitleFromMarkdown(MarkdownContent, displayItem);
         }
 
         // ===== 新規 Markdown 作成 =====
@@ -788,6 +824,16 @@ namespace _2vdm_spec_generator.ViewModel
 
             // GUI 要素がある場合は位置 JSON を確実に作成しておく（存在しない場合のみ作成）
             EnsureGuiPositionsJsonExists();
+
+            // 追加: 編集時にも選択ファイルがあればタイトルを更新する
+            if (SelectedItem != null)
+            {
+                DiagramTitle = ExtractDiagramTitleFromMarkdown(value, SelectedItem);
+            }
+            else
+            {
+                DiagramTitle = "Condition Transition Map";
+            }
         }
 
         /// <summary>
