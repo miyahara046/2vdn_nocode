@@ -225,6 +225,9 @@ namespace _2vdm_spec_generator.ViewModel
 
             var displayItem = SelectedItem ?? new FolderItem { FullPath = path, Name = Path.GetFileName(path), Level = 0 };
             DiagramTitle = ExtractDiagramTitleFromMarkdown(MarkdownContent, displayItem);
+
+            // 追加: Renderer に渡す画面名集合（正規化済み）
+            ScreenNamesForRenderer = GetScreenManagementScreenNames();
         }
 
         // ===== 新規 Markdown 作成 =====
@@ -1337,6 +1340,47 @@ namespace _2vdm_spec_generator.ViewModel
                     FullPath = path,
                     Level = 0
                 };
+            }
+        }
+
+        // 追加: Renderer に渡す画面名集合（正規化済み）
+        public IEnumerable<string> ScreenNamesForRenderer { get; private set; } = Enumerable.Empty<string>();
+
+        // 既存の LoadMarkdownAndVdm メソッド末尾で呼ぶことを想定したヘルパー
+        public IEnumerable<string> GetScreenManagementScreenNames()
+        {
+            try
+            {
+                var path = FindScreenListFilePath();
+                if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+                    return Enumerable.Empty<string>();
+
+                var lines = File.ReadAllLines(path);
+                // 見出し "# 画面一覧" を探す
+                int idx = Array.FindIndex(lines, l => !string.IsNullOrWhiteSpace(l) && l.TrimStart().StartsWith("# 画面一覧", StringComparison.OrdinalIgnoreCase));
+                if (idx < 0) return Enumerable.Empty<string>();
+
+                var results = new List<string>();
+                for (int i = idx + 1; i < lines.Length; i++)
+                {
+                    var t = lines[i].Trim();
+                    if (string.IsNullOrEmpty(t)) continue; // 空行はスキップ
+                    if (t.StartsWith("#")) break; // 次の見出しで終了
+                    if (t.StartsWith("- "))
+                    {
+                        var name = t.Substring(2).Trim();
+                        // 末尾の 'へ' を削る（もしあれば）、余分な矢印も除去
+                        if (name.EndsWith("へ")) name = name.Substring(0, name.Length - 1).Trim();
+                        // normalize: トリムだけ。Renderer 側でもさらに正規化するがここでも正規化を行う
+                        if (!string.IsNullOrWhiteSpace(name)) results.Add(name);
+                    }
+                }
+
+                return results.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            }
+            catch
+            {
+                return Enumerable.Empty<string>();
             }
         }
     }

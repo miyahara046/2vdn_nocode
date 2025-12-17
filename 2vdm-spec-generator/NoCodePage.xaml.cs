@@ -48,7 +48,7 @@ namespace _2vdm_spec_generator
                             }
 
                             vm.GuiElements = new ObservableCollection<GuiElement>(elements.Select(e => e));
-                            _diagramRenderer.Render(vm.GuiElements);
+                            _diagramRenderer.Render(vm.GuiElements, vm.ScreenNamesForRenderer);
                         }
                         catch
                         {
@@ -76,10 +76,9 @@ namespace _2vdm_spec_generator
                     });
                 };
 
-                // 追加：右クリックで Screen ノードを開く
-                _diagramRenderer.NodeRightClicked = el =>
+                // 変更：右クリックで Screen ノードを開く → ダブルクリックで Screen ノードを開く
+                _diagramRenderer.NodeDoubleClicked = el =>
                 {
-                    // 非同期メソッドを fire-and-forget で呼び出す（UI スレッドから起動）
                     MainThread.BeginInvokeOnMainThread(() =>
                     {
                         _ = vm.OpenFileForScreen(el?.Name);
@@ -94,7 +93,7 @@ namespace _2vdm_spec_generator
 
             if (BindingContext is NoCodePageViewModel vm)
             {
-                _diagramRenderer.Render(vm.GuiElements);
+                _diagramRenderer.Render(vm.GuiElements, vm.ScreenNamesForRenderer);
 
                 vm.PropertyChanged -= Vm_PropertyChanged;
                 vm.PropertyChanged += Vm_PropertyChanged;
@@ -108,7 +107,7 @@ namespace _2vdm_spec_generator
             {
                 MainThread.BeginInvokeOnMainThread(() =>
                 {
-                    _diagramRenderer.Render(vm.GuiElements);
+                    _diagramRenderer.Render(vm.GuiElements, vm.ScreenNamesForRenderer);
                 });
             }
         }

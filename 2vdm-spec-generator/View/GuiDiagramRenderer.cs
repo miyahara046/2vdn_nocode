@@ -10,6 +10,8 @@ using Microsoft.Maui.ApplicationModel; // MainThread
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Input;
 using Windows.UI.Input; // for PointerPoint etc (API surfaces)
+using Microsoft.UI.Xaml.Controls;
+using Windows.Foundation;
 #endif
 
 namespace _2vdm_spec_generator.View
@@ -30,8 +32,15 @@ namespace _2vdm_spec_generator.View
         public Action<GuiElement> NodeClicked { get; set; }
         public Action<GuiElement, int?> BranchClicked { get; set; }
 
-        // 追加: 右クリックイベント
+        // 既存: 右クリックの古い用途は置き換えます（画面はダブルクリックに）
         public Action<GuiElement> NodeRightClicked { get; set; }
+
+        // 追加: ポップアップ（コンテキストメニュー）要求を View に通知する
+        // actionKey には "edit"/"delete"/"properties"/"deleteBranch:{index}" 等を入れます
+        public Action<GuiElement, string> NodeContextRequested { get; set; }
+
+        // 追加: ノードのダブルクリック（特に Screen 開く用）
+        public Action<GuiElement> NodeDoubleClicked { get; set; }
 
         public GuiDiagramRenderer()
         {
@@ -42,19 +51,15 @@ namespace _2vdm_spec_generator.View
                 Drawable = _drawable,
                 BackgroundColor = Colors.White,
                 InputTransparent = false,
-                // 横幅が親に引き伸ばされないように Start にする（ScrollView が横スクロールを検出しやすくする）
                 HorizontalOptions = LayoutOptions.Start,
                 VerticalOptions = LayoutOptions.Start
             };
 
-            // 内部で ScrollView を持たず、親（XAML）の ScrollView に任せる
             Content = _graphicsView;
 
-            // 自身も Start にして親 ScrollView の測定が正しく働くようにする
             this.HorizontalOptions = LayoutOptions.Start;
             this.VerticalOptions = LayoutOptions.Start;
 
-            // ハンドラー変更イベントは GraphicsView のみに登録（プラットフォーム入力はここでフック）
             _graphicsView.HandlerChanged += GraphicsView_HandlerChanged;
 
 #if !WINDOWS
@@ -462,10 +467,15 @@ namespace _2vdm_spec_generator.View
 
         private static float Snap(float value, float grid) => (float)(Math.Round(value / grid) * grid);
 
-        public void Render(IEnumerable<GuiElement> elements)
+        // Render に画面一覧（画面管理クラス由来の名前集合）を渡せるようにした
+        public void Render(IEnumerable<GuiElement> elements, IEnumerable<string> screenNames = null)
         {
             var list = elements?.ToList() ?? new();
             _drawable.Elements = list;
+
+            // 外部から画面名集合が渡されたら Drawable にセット（Drawable 内で正規化して利用する）
+            _drawable.ScreenNameSet = screenNames ?? null;
+
             _drawable.ArrangeNodes();
 
             float maxY = 0f;
@@ -473,15 +483,11 @@ namespace _2vdm_spec_generator.View
                 maxY = _drawable.Elements.Max(e => e.Y + GuiDiagramDrawable.NodeHeight);
 
             var height = Math.Max(maxY + 120f, 300f);
-
-            // 横幅はコンテンツに応じて変える（必要に応じて計算式を調整）
             var width = Math.Max(1000f, GuiDiagramDrawable.NodeWidth * 4f + 200f);
 
             _graphicsView.HeightRequest = height;
             _graphicsView.WidthRequest = width;
 
-            // 重要: ContentView / GraphicsView を Start にしているため、ここで自身の要求サイズを設定して
-            // 親の ScrollView が横幅を超えていると判定できるようにする
             this.WidthRequest = width;
             this.HeightRequest = height;
 
