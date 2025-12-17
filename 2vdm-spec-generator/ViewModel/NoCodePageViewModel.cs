@@ -950,7 +950,7 @@ namespace _2vdm_spec_generator.ViewModel
         }
 
         [RelayCommand]
-        private async Task DeleteSelectedGuiElementAsync()
+        public async Task DeleteSelectedGuiElementAsync()
         {
             var el = SelectedGuiElement;
             if (el == null) return;
@@ -1213,7 +1213,7 @@ namespace _2vdm_spec_generator.ViewModel
                 if (k >= lines.Count) break;
                 var t = lines[k].TrimStart();
                 if (string.IsNullOrWhiteSpace(t)) continue;
-                if (t.StartsWith("- ") && lines[k].StartsWith("  ")) { anyBranchLeft = true; break; }
+                if (t.StartsWith("- ") && !lines[k].StartsWith("  ")) { anyBranchLeft = true; break; }
             }
 
             if (!anyBranchLeft)
