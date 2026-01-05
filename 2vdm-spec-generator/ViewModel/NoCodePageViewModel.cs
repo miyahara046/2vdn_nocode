@@ -670,6 +670,928 @@ namespace _2vdm_spec_generator.ViewModel
             // 再読込して GuiElements を更新（AddButton でマークダウンが変わったので反映）
             LoadMarkdownAndVdm(path);
         }
+        public async Task EditSelectedNodeAsync()
+        {
+            var el = SelectedGuiElement;
+            if (el == null) return;
+
+            // 分岐が選択されているなら分岐編集を優先
+            if (SelectedBranchIndex.HasValue)
+            {
+                await EditSelectedBranchAsync();   // ← 分岐編集（後で実装）
+                return;
+            }
+
+            // ノード種別で分岐
+            switch (el.Type)
+            {
+                case GuiElementType.Button:
+                    await RenameSelectedButtonAsync();   // いま作ったやつ
+                    break;
+
+                case GuiElementType.Screen:
+                    await RenameSelectedScreenAsync();   // 画面名変更（必要なら）
+                    break;
+
+                case GuiElementType.Event:
+                    await EditSelectedEventAsync();      // 遷移先や説明など
+                    break;
+
+                case GuiElementType.Timeout:
+                    await EditSelectedTimeoutAsync();    // 秒数/遷移先
+                    break;
+
+                default:
+                    await Application.Current.MainPage.DisplayAlert("情報", "このノードは編集対象外です。", "OK");
+                    break;
+            }
+        }
+
+
+        [RelayCommand]
+        public async Task RenameSelectedButtonAsync()
+        {
+            var el = SelectedGuiElement;
+            if (el == null || el.Type != GuiElementType.Button)
+            {
+                await Application.Current.MainPage.DisplayAlert("情報", "ボタンノードを選択してから実行してください。", "OK");
+                return;
+            }
+            if (SelectedItem == null || string.IsNullOrWhiteSpace(SelectedItem.FullPath)) return;
+
+            string oldName = (el.Name ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(oldName)) return;
+
+            string newName = await Shell.Current.DisplayPromptAsync(
+                "ボタン名変更",
+                $"\"{oldName}\" の新しいボタン名を入力してください",
+                "OK", "キャンセル",
+                placeholder: "NewButtonName",
+                initialValue: oldName
+            );
+
+            if (string.IsNullOrWhiteSpace(newName)) return;
+            newName = newName.Trim();
+
+            if (string.Equals(oldName, newName, StringComparison.Ordinal))
+                return;
+
+            // 重複チェック（同一ファイル内のボタン名）
+            bool exists = GuiElements.Any(g =>
+                g.Type == GuiElementType.Button &&
+                !string.IsNullOrWhiteSpace(g.Name) &&
+                !ReferenceEquals(g, el) &&
+                string.Equals(g.Name.Trim(), newName, StringComparison.OrdinalIgnoreCase));
+
+            if (exists)
+            {
+                await Application.Current.MainPage.DisplayAlert("重複", $"既に同名のボタン \"{newName}\" が存在します。", "OK");
+                return;
+            }
+
+            string mdPath = SelectedItem.FullPath;
+
+            try
+            {
+                string currentMarkdown = File.Exists(mdPath) ? File.ReadAllText(mdPath) : string.Empty;
+
+                string updatedMarkdown = RenameButtonInMarkdown(currentMarkdown, oldName, newName);
+
+                // 変化が無いなら中断（見つからなかった等）
+                if (string.Equals(currentMarkdown, updatedMarkdown, StringComparison.Ordinal))
+                {
+                    await Application.Current.MainPage.DisplayAlert("情報", "置換対象が見つかりませんでした（ボタン一覧/イベント一覧の形式を確認してください）。", "OK");
+                    return;
+                }
+
+                File.WriteAllText(mdPath, updatedMarkdown);
+
+                // VDM++ 再生成
+                var vdmConv = new MarkdownToVdmConverter();
+                string newVdm = vdmConv.ConvertToVdm(updatedMarkdown);
+                File.WriteAllText(Path.ChangeExtension(mdPath, ".vdmpp"), newVdm);
+
+                // positions.json の名前キーもリネーム（位置保持）
+                RenamePositionEntry(mdPath, oldName, newName);
+
+                // 反映
+                MarkdownContent = updatedMarkdown;
+                VdmContent = newVdm;
+
+                LoadMarkdownAndVdm(mdPath);
+
+                // 選択の復元（同名要素があると曖昧なので Button 型だけ拾う）
+                SelectedGuiElement = GuiElements.FirstOrDefault(g =>
+                    g.Type == GuiElementType.Button &&
+                    !string.IsNullOrWhiteSpace(g.Name) &&
+                    string.Equals(g.Name.Trim(), newName, StringComparison.Ordinal));
+
+                SelectedBranchIndex = null;
+            }
+            catch
+            {
+                await Application.Current.MainPage.DisplayAlert("エラー", "ボタン名変更に失敗しました。", "OK");
+            }
+        }
+
+        private string RenameButtonInMarkdown(string markdown, string oldName, string newName)
+        {
+            if (markdown == null) markdown = string.Empty;
+
+            var lines = markdown.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).ToList();
+
+            bool inButtonList = false;
+            bool changed = false;
+
+            for (int i = 0; i < lines.Count; i++)
+            {
+                string raw = lines[i];
+                string trimStart = raw.TrimStart();
+                string trim = raw.Trim();
+
+                // セクション判定
+                if (trimStart.StartsWith("### 有効ボタン一覧"))
+                {
+                    inButtonList = true;
+                }
+                else if (inButtonList && (trimStart.StartsWith("### ") || trimStart.StartsWith("## ")))
+                {
+                    inButtonList = false;
+                }
+
+                // 1) ボタン一覧内の "- 旧名" を置換
+                if (inButtonList)
+                {
+                    // インデントは維持
+                    if (trim == $"- {oldName}")
+                    {
+                        int lead = raw.Length - trimStart.Length;
+                        string indent = raw.Substring(0, lead);
+                        lines[i] = indent + $"- {newName}";
+                        changed = true;
+                        continue;
+                    }
+                }
+
+                // 2) イベント一覧の "- 旧名押下..." を置換（条件分岐/非分岐どちらも親行に効く）
+                // 例: "- ボタン1押下 → 画面A"
+                //     "- ボタン1押下 →"
+                //     "- ボタン1押下"
+                if (trimStart.StartsWith("- "))
+                {
+                    string afterDash = trimStart.Substring(2); // "- " の後
+                    string prefix = oldName + "押下";
+
+                    if (afterDash.StartsWith(prefix, StringComparison.Ordinal))
+                    {
+                        // "旧名押下" の後ろを全部保持して、"新名押下" に差し替える
+                        string rest = afterDash.Substring(prefix.Length);
+                        int lead = raw.Length - trimStart.Length;
+                        string indent = raw.Substring(0, lead);
+                        lines[i] = indent + "- " + newName + "押下" + rest;
+                        changed = true;
+                        continue;
+                    }
+                }
+            }
+
+            if (!changed) return markdown;
+            return string.Join(Environment.NewLine, lines);
+        }
+
+        private void RenamePositionEntry(string mdPath, string oldName, string newName)
+        {
+            try
+            {
+                var posPath = Path.ChangeExtension(mdPath, ".positions.json");
+                if (!File.Exists(posPath)) return;
+
+                var json = File.ReadAllText(posPath);
+                var list = JsonSerializer.Deserialize<List<GuiElementPosition>>(json);
+                if (list == null || list.Count == 0) return;
+
+                bool changed = false;
+                foreach (var p in list)
+                {
+                    if (string.Equals((p.Name ?? "").Trim(), oldName, StringComparison.Ordinal))
+                    {
+                        p.Name = newName;
+                        changed = true;
+                    }
+                }
+
+                if (!changed) return;
+
+                var options = new JsonSerializerOptions { WriteIndented = true };
+                File.WriteAllText(posPath, JsonSerializer.Serialize(list, options));
+            }
+            catch
+            {
+                // 無視（ログ追加するならここ）
+            }
+        }
+
+        public async Task EditSelectedEventAsync()
+        {
+            var el = SelectedGuiElement;
+            if (el == null || el.Type != GuiElementType.Event)
+            {
+                await Application.Current.MainPage.DisplayAlert("情報", "イベントノードを選択してから実行してください。", "OK");
+                return;
+            }
+            if (SelectedItem == null || string.IsNullOrWhiteSpace(SelectedItem.FullPath)) return;
+
+            // 分岐イベントはここでは扱わない（別コマンド推奨）
+            if (el.IsConditional)
+            {
+                await Application.Current.MainPage.DisplayAlert("情報", "分岐イベントは「分岐編集」で対応してください。", "OK");
+                return;
+            }
+
+            string mdPath = SelectedItem.FullPath;
+
+            // 既存の表示名（通常は遷移先名）
+            string oldTarget = (el.Name ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(oldTarget))
+                oldTarget = (el.Target ?? string.Empty).Trim();
+
+            if (string.IsNullOrWhiteSpace(oldTarget))
+            {
+                await Application.Current.MainPage.DisplayAlert("情報", "編集対象の遷移先が取得できませんでした。", "OK");
+                return;
+            }
+
+            string newTarget = await Shell.Current.DisplayPromptAsync(
+                "イベント遷移先変更",
+                $"遷移先を変更する（現在: \"{oldTarget}\"）\n新しい遷移先を入力してください。",
+                "OK", "キャンセル",
+                placeholder: "例: 画面A",
+                initialValue: oldTarget
+            );
+
+            if (string.IsNullOrWhiteSpace(newTarget)) return;
+            newTarget = newTarget.Trim();
+
+            if (string.Equals(oldTarget, newTarget, StringComparison.Ordinal))
+                return;
+
+            try
+            {
+                string currentMarkdown = File.Exists(mdPath) ? File.ReadAllText(mdPath) : string.Empty;
+
+                string updatedMarkdown = ReplaceEventTargetInMarkdown(currentMarkdown, oldTarget, newTarget);
+
+                if (string.Equals(currentMarkdown, updatedMarkdown, StringComparison.Ordinal))
+                {
+                    await Application.Current.MainPage.DisplayAlert(
+                        "情報",
+                        "置換対象が見つかりませんでした（イベント一覧の形式が想定と異なる可能性があります）。",
+                        "OK"
+                    );
+                    return;
+                }
+
+                File.WriteAllText(mdPath, updatedMarkdown);
+
+                // VDM++ 再生成
+                var vdmConv = new MarkdownToVdmConverter();
+                var newVdm = vdmConv.ConvertToVdm(updatedMarkdown);
+                File.WriteAllText(Path.ChangeExtension(mdPath, ".vdmpp"), newVdm);
+
+                // positions.json の名前キーをリネーム（イベントノードの表示名が変わるため）
+                RenamePositionEntry(mdPath, oldTarget, newTarget);
+
+                // 反映
+                MarkdownContent = updatedMarkdown;
+                VdmContent = newVdm;
+
+                LoadMarkdownAndVdm(mdPath);
+
+                // 選択復元（Eventで newTarget 名のもの）
+                SelectedGuiElement = GuiElements.FirstOrDefault(g =>
+                    g.Type == GuiElementType.Event &&
+                    !string.IsNullOrWhiteSpace(g.Name) &&
+                    string.Equals(g.Name.Trim(), newTarget, StringComparison.Ordinal));
+
+                SelectedBranchIndex = null;
+            }
+            catch
+            {
+                await Application.Current.MainPage.DisplayAlert("エラー", "イベント編集に失敗しました。", "OK");
+            }
+        }
+        private string ReplaceEventTargetInMarkdown(string markdown, string oldTarget, string newTarget)
+        {
+            if (markdown == null) markdown = string.Empty;
+
+            var lines = markdown.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).ToList();
+
+            bool inEventList = false;
+            bool changed = false;
+
+            for (int i = 0; i < lines.Count; i++)
+            {
+                string raw = lines[i];
+                string trimStart = raw.TrimStart();
+                string trim = raw.Trim();
+
+                // イベント一覧セクションの開始/終了
+                if (trimStart.StartsWith("### イベント一覧", StringComparison.Ordinal))
+                {
+                    inEventList = true;
+                    continue;
+                }
+                if (inEventList && (trimStart.StartsWith("### ", StringComparison.Ordinal) || trimStart.StartsWith("## ", StringComparison.Ordinal) || trimStart.StartsWith("# ", StringComparison.Ordinal)))
+                {
+                    inEventList = false;
+                }
+
+                if (!inEventList) continue;
+
+                // ネスト行（分岐）はここでは変更しない（分岐編集で対応）
+                if (raw.StartsWith("  ") || raw.StartsWith("\t"))
+                    continue;
+
+                // "- ..." の行だけ対象
+                if (!trimStart.StartsWith("- ", StringComparison.Ordinal))
+                    continue;
+
+                string content = trimStart.Substring(2).Trim();
+
+                // 形式1: "何か → 遷移先"
+                int arrowIdx = content.IndexOf('→');
+                if (arrowIdx >= 0)
+                {
+                    string left = content.Substring(0, arrowIdx).Trim();
+                    string right = content.Substring(arrowIdx + 1).Trim();
+
+                    // right が oldTarget と完全一致する場合のみ置換（誤爆防止）
+                    if (string.Equals(right, oldTarget, StringComparison.Ordinal))
+                    {
+                        int lead = raw.Length - trimStart.Length;
+                        string indent = raw.Substring(0, lead);
+
+                        lines[i] = indent + "- " + left + " → " + newTarget;
+                        changed = true;
+                    }
+                    continue;
+                }
+
+                // 形式2: "遷移先だけ" のイベント（まれ）
+                if (string.Equals(content, oldTarget, StringComparison.Ordinal))
+                {
+                    int lead = raw.Length - trimStart.Length;
+                    string indent = raw.Substring(0, lead);
+                    lines[i] = indent + "- " + newTarget;
+                    changed = true;
+                }
+            }
+
+            return changed ? string.Join(Environment.NewLine, lines) : markdown;
+        }
+
+        public async Task EditSelectedBranchAsync()
+        {
+            var parent = SelectedGuiElement;
+            var idxNullable = SelectedBranchIndex;
+
+            if (parent == null || parent.Type != GuiElementType.Event)
+            {
+                await Application.Current.MainPage.DisplayAlert("情報", "分岐の親イベントが選択されていません。", "OK");
+                return;
+            }
+            if (!idxNullable.HasValue)
+            {
+                await Application.Current.MainPage.DisplayAlert("情報", "分岐が選択されていません。", "OK");
+                return;
+            }
+            if (!parent.IsConditional || parent.Branches == null || parent.Branches.Count == 0)
+            {
+                await Application.Current.MainPage.DisplayAlert("情報", "このイベントは分岐を持っていません。", "OK");
+                return;
+            }
+
+            int branchIndex = idxNullable.Value;
+            if (branchIndex < 0 || branchIndex >= parent.Branches.Count)
+            {
+                await Application.Current.MainPage.DisplayAlert("情報", "分岐番号が不正です。", "OK");
+                return;
+            }
+
+            if (SelectedItem == null || string.IsNullOrWhiteSpace(SelectedItem.FullPath)) return;
+            string mdPath = SelectedItem.FullPath;
+
+            // 旧値
+            var oldBranch = parent.Branches[branchIndex];
+            string oldCond = (oldBranch.Condition ?? string.Empty).Trim();
+            string oldTarget = (oldBranch.Target ?? string.Empty).Trim();
+
+            // 新しい条件
+            string newCond = await Shell.Current.DisplayPromptAsync(
+                "分岐編集（条件）",
+                $"分岐 {branchIndex + 1}/{parent.Branches.Count}\n条件を入力してください",
+                "OK", "キャンセル",
+                placeholder: "例: 表示部に1が入力されている",
+                initialValue: oldCond
+            );
+            if (string.IsNullOrWhiteSpace(newCond)) return;
+            newCond = newCond.Trim();
+
+            // 新しい遷移先
+            string newTarget = await Shell.Current.DisplayPromptAsync(
+                "分岐編集（遷移先）",
+                $"分岐 {branchIndex + 1}/{parent.Branches.Count}\n遷移先を入力してください",
+                "OK", "キャンセル",
+                placeholder: "例: 画面K",
+                initialValue: oldTarget
+            );
+            if (newTarget == null) return; // キャンセル
+            newTarget = newTarget.Trim();
+
+            // 変化なしなら終了
+            if (string.Equals(oldCond, newCond, StringComparison.Ordinal) &&
+                string.Equals(oldTarget, newTarget, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            try
+            {
+                string currentMarkdown = File.Exists(mdPath) ? File.ReadAllText(mdPath) : string.Empty;
+
+                // ★ 親イベントは Markdown 上では "- {parent.Name} →" 形式（例: "- ボタン1押下 →"）
+                string parentEventLabel = (parent.Name ?? string.Empty).Trim();
+                if (string.IsNullOrWhiteSpace(parentEventLabel))
+                {
+                    await Application.Current.MainPage.DisplayAlert("情報", "親イベント名が取得できませんでした。", "OK");
+                    return;
+                }
+
+                string updatedMarkdown = ReplaceBranchLineInMarkdown(
+                    currentMarkdown,
+                    parentEventLabel,
+                    branchIndex,
+                    newCond,
+                    newTarget
+                );
+
+                if (string.Equals(currentMarkdown, updatedMarkdown, StringComparison.Ordinal))
+                {
+                    await Application.Current.MainPage.DisplayAlert(
+                        "情報",
+                        "置換対象が見つかりませんでした（イベント一覧の形式やインデントを確認してください）。",
+                        "OK"
+                    );
+                    return;
+                }
+
+                File.WriteAllText(mdPath, updatedMarkdown);
+
+                // VDM++ 再生成
+                var vdmConv = new MarkdownToVdmConverter();
+                var newVdm = vdmConv.ConvertToVdm(updatedMarkdown);
+                File.WriteAllText(Path.ChangeExtension(mdPath, ".vdmpp"), newVdm);
+
+                // 反映して再解析
+                MarkdownContent = updatedMarkdown;
+                VdmContent = newVdm;
+
+                LoadMarkdownAndVdm(mdPath);
+
+                // 選択復元（親イベント）
+                SelectedGuiElement = GuiElements.FirstOrDefault(g =>
+                    g.Type == GuiElementType.Event &&
+                    g.IsConditional &&
+                    !string.IsNullOrWhiteSpace(g.Name) &&
+                    string.Equals(g.Name.Trim(), parentEventLabel, StringComparison.Ordinal));
+
+                SelectedBranchIndex = branchIndex;
+            }
+            catch
+            {
+                await Application.Current.MainPage.DisplayAlert("エラー", "分岐編集に失敗しました。", "OK");
+            }
+        }
+        private string ReplaceBranchLineInMarkdown(
+    string markdown,
+    string parentEventLabel,  // 例: "ボタン1押下"
+    int branchIndex,
+    string newCondition,
+    string newTarget
+)
+        {
+            if (markdown == null) markdown = string.Empty;
+
+            var lines = markdown.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).ToList();
+
+            bool inEventList = false;
+            bool changed = false;
+
+            for (int i = 0; i < lines.Count; i++)
+            {
+                string raw = lines[i];
+                string trimStart = raw.TrimStart();
+
+                // イベント一覧セクション検出
+                if (trimStart.StartsWith("### イベント一覧", StringComparison.Ordinal))
+                {
+                    inEventList = true;
+                    continue;
+                }
+                if (inEventList && (trimStart.StartsWith("### ", StringComparison.Ordinal) || trimStart.StartsWith("## ", StringComparison.Ordinal) || trimStart.StartsWith("# ", StringComparison.Ordinal)))
+                {
+                    inEventList = false;
+                }
+                if (!inEventList) continue;
+
+                // 親行を探す: "- {parentEventLabel} →"（右辺が空の行）
+                // 例: "- ボタン1押下 →"
+                if (!trimStart.StartsWith("- ", StringComparison.Ordinal)) continue;
+
+                string content = trimStart.Substring(2).Trim(); // "- " の後
+                int arrowIdx = content.IndexOf('→');
+                if (arrowIdx < 0) continue;
+
+                string left = content.Substring(0, arrowIdx).Trim();
+                string right = content.Substring(arrowIdx + 1).Trim();
+
+                // 条件分岐の親行は右辺が空（"→" だけ、または空白だけ）
+                if (!string.Equals(left, parentEventLabel, StringComparison.Ordinal)) continue;
+                if (!string.IsNullOrEmpty(right)) continue;
+
+                // 親行の直下に続くネスト行を走査し、branchIndex 番目の "- ..." を置換
+                int found = -1;
+                int j = i + 1;
+
+                while (j < lines.Count)
+                {
+                    string nestedRaw = lines[j];
+                    if (string.IsNullOrWhiteSpace(nestedRaw)) break;
+
+                    // ネスト判定（MarkdownToUiConverter と同じ判定）
+                    if (!(nestedRaw.StartsWith("  ") || nestedRaw.StartsWith("\t")))
+                        break;
+
+                    string nestedTrim = nestedRaw.TrimStart();
+
+                    if (nestedTrim.StartsWith("- ", StringComparison.Ordinal))
+                    {
+                        found++;
+
+                        if (found == branchIndex)
+                        {
+                            // 元のインデント維持
+                            string indent = nestedRaw.Substring(0, nestedRaw.Length - nestedTrim.Length);
+
+                            // 出力形式： "  - 条件 → 遷移先"
+                            // 遷移先が空なら "  - 条件" だけにする（保険）
+                            if (string.IsNullOrWhiteSpace(newTarget))
+                                lines[j] = indent + "- " + newCondition;
+                            else
+                                lines[j] = indent + "- " + newCondition + " → " + newTarget;
+
+                            changed = true;
+                            break;
+                        }
+                    }
+
+                    j++;
+                }
+
+                // 親イベントが見つかった時点で、変更できたかどうかに関わらず探索終了してよい
+                break;
+            }
+
+            return changed ? string.Join(Environment.NewLine, lines) : markdown;
+        }
+
+        public async Task RenameSelectedScreenAsync()
+        {
+            var el = SelectedGuiElement;
+            if (el == null || el.Type != GuiElementType.Screen)
+            {
+                await Application.Current.MainPage.DisplayAlert("情報", "画面ノードを選択してから実行してください。", "OK");
+                return;
+            }
+            if (SelectedItem == null || string.IsNullOrWhiteSpace(SelectedItem.FullPath)) return;
+
+            string mdPath = SelectedItem.FullPath;
+
+            // 画面一覧ファイル（先頭が "# 画面一覧"）でのみ変更する
+            string currentMarkdown = File.Exists(mdPath) ? File.ReadAllText(mdPath) : string.Empty;
+            var firstLine = currentMarkdown.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).FirstOrDefault()?.Trim();
+            if (!string.Equals(firstLine, "# 画面一覧", StringComparison.Ordinal))
+            {
+                await Application.Current.MainPage.DisplayAlert("情報", "画面名変更は「# 画面一覧」ファイル上で実行してください。", "OK");
+                return;
+            }
+
+            string oldName = (el.Name ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(oldName)) return;
+
+            string newName = await Shell.Current.DisplayPromptAsync(
+                "画面名変更",
+                $"\"{oldName}\" の新しい画面名を入力してください",
+                "OK", "キャンセル",
+                placeholder: "例: 画面A",
+                initialValue: oldName
+            );
+            if (string.IsNullOrWhiteSpace(newName)) return;
+            newName = newName.Trim();
+
+            if (string.Equals(oldName, newName, StringComparison.Ordinal)) return;
+
+            // 重複チェック（画面一覧内）
+            if (currentMarkdown.Contains("\n- " + newName) || currentMarkdown.Contains("\r\n- " + newName) || currentMarkdown.Contains("- " + newName + "\n") || currentMarkdown.Contains("- " + newName + "\r\n"))
+            {
+                await Application.Current.MainPage.DisplayAlert("重複", $"既に同名の画面 \"{newName}\" が存在します。", "OK");
+                return;
+            }
+
+            try
+            {
+                string updatedMarkdown = RenameScreenInMarkdown(currentMarkdown, oldName, newName);
+
+                if (string.Equals(currentMarkdown, updatedMarkdown, StringComparison.Ordinal))
+                {
+                    await Application.Current.MainPage.DisplayAlert("情報", "置換対象が見つかりませんでした。", "OK");
+                    return;
+                }
+
+                File.WriteAllText(mdPath, updatedMarkdown);
+
+                // 画面一覧は VDM 生成対象ではないかもしれないが、念のため更新しておく（必要なければ削ってOK）
+                var vdmConv = new MarkdownToVdmConverter();
+                var newVdm = vdmConv.ConvertToVdm(updatedMarkdown);
+                File.WriteAllText(Path.ChangeExtension(mdPath, ".vdmpp"), newVdm);
+
+                // positions のキー名も変更（位置維持）
+                RenamePositionEntry(mdPath, oldName, newName);
+
+                MarkdownContent = updatedMarkdown;
+                VdmContent = newVdm;
+
+                LoadMarkdownAndVdm(mdPath);
+
+                SelectedGuiElement = GuiElements.FirstOrDefault(g =>
+                    g.Type == GuiElementType.Screen &&
+                    !string.IsNullOrWhiteSpace(g.Name) &&
+                    string.Equals(g.Name.Trim(), newName, StringComparison.Ordinal));
+
+                SelectedBranchIndex = null;
+            }
+            catch
+            {
+                await Application.Current.MainPage.DisplayAlert("エラー", "画面名変更に失敗しました。", "OK");
+            }
+        }
+        private string RenameScreenInMarkdown(string markdown, string oldName, string newName)
+        {
+            if (markdown == null) markdown = string.Empty;
+
+            var lines = markdown.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).ToList();
+            bool changed = false;
+
+            for (int i = 0; i < lines.Count; i++)
+            {
+                var raw = lines[i];
+                var trimStart = raw.TrimStart();
+                var trim = raw.Trim();
+
+                // "- 旧名" の完全一致だけ置換（誤爆防止）
+                if (trim == $"- {oldName}")
+                {
+                    int lead = raw.Length - trimStart.Length;
+                    string indent = raw.Substring(0, lead);
+                    lines[i] = indent + $"- {newName}";
+                    changed = true;
+                }
+            }
+
+            return changed ? string.Join(Environment.NewLine, lines) : markdown;
+        }
+        public async Task EditSelectedTimeoutAsync()
+        {
+            var el = SelectedGuiElement;
+            if (el == null || el.Type != GuiElementType.Timeout)
+            {
+                await Application.Current.MainPage.DisplayAlert("情報", "タイムアウトノードを選択してから実行してください。", "OK");
+                return;
+            }
+            if (SelectedItem == null || string.IsNullOrWhiteSpace(SelectedItem.FullPath)) return;
+
+            string mdPath = SelectedItem.FullPath;
+
+            try
+            {
+                string currentMarkdown = File.Exists(mdPath) ? File.ReadAllText(mdPath) : string.Empty;
+                var lines = currentMarkdown.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).ToList();
+                if (lines.Count < 2)
+                {
+                    await Application.Current.MainPage.DisplayAlert("情報", "タイムアウト定義（2行目）が存在しません。", "OK");
+                    return;
+                }
+
+                // 画面仕様ファイル（先頭が "## "）でのみ編集する
+                if (!lines[0].TrimStart().StartsWith("## ", StringComparison.Ordinal))
+                {
+                    await Application.Current.MainPage.DisplayAlert("情報", "タイムアウト編集は画面仕様（先頭が '## '）のMarkdownで実行してください。", "OK");
+                    return;
+                }
+
+                // 現在のタイムアウト定義を解析（Converterと同じ思想）
+                var parsed = ParseTimeoutDefinitionLine(lines[1]);
+                if (parsed == null)
+                {
+                    await Application.Current.MainPage.DisplayAlert("情報", "タイムアウト定義行の形式が想定と異なります。", "OK");
+                    return;
+                }
+
+                string oldTimeoutName = parsed.TimeoutName; // 例: "80秒"
+                string oldTarget = parsed.Target;           // 例: "画面A" or ""
+
+                // 新しいタイムアウト名（秒数など）
+                string newTimeoutName = await Shell.Current.DisplayPromptAsync(
+                    "タイムアウト編集（時間）",
+                    $"タイムアウト時間（Name）を入力してください（現在: \"{oldTimeoutName}\"）\n例: 80秒",
+                    "OK", "キャンセル",
+                    placeholder: "例: 80秒",
+                    initialValue: oldTimeoutName
+                );
+                if (string.IsNullOrWhiteSpace(newTimeoutName)) return;
+                newTimeoutName = newTimeoutName.Trim();
+
+                // 新しい遷移先（空OK）
+                string newTarget = await Shell.Current.DisplayPromptAsync(
+                    "タイムアウト編集（遷移先）",
+                    "遷移先を入力してください（空なら遷移先なし）",
+                    "OK", "キャンセル",
+                    placeholder: "例: 画面A",
+                    initialValue: oldTarget ?? string.Empty
+                );
+                if (newTarget == null) return; // キャンセル
+                newTarget = newTarget.Trim();
+
+                // 変更なしなら終了
+                if (string.Equals(oldTimeoutName, newTimeoutName, StringComparison.Ordinal) &&
+                    string.Equals(oldTarget ?? "", newTarget ?? "", StringComparison.Ordinal))
+                {
+                    return;
+                }
+
+                // 2行目を書き換え
+                lines[1] = BuildTimeoutDefinitionLine(lines[1], newTimeoutName, newTarget);
+
+                // イベント一覧の「タイムアウト系」の遷移も合わせて更新（誤爆しない範囲で）
+                var updatedMarkdown = string.Join(Environment.NewLine, lines);
+                updatedMarkdown = UpdateTimeoutReferencesInEventList(updatedMarkdown, oldTimeoutName, newTimeoutName, oldTarget ?? "", newTarget ?? "");
+
+                File.WriteAllText(mdPath, updatedMarkdown);
+
+                // VDM++ 再生成
+                var vdmConv = new MarkdownToVdmConverter();
+                var newVdm = vdmConv.ConvertToVdm(updatedMarkdown);
+                File.WriteAllText(Path.ChangeExtension(mdPath, ".vdmpp"), newVdm);
+
+                // timeoutノード名が変わるので positions もリネーム（位置維持）
+                if (!string.Equals(oldTimeoutName, newTimeoutName, StringComparison.Ordinal))
+                {
+                    RenamePositionEntry(mdPath, oldTimeoutName, newTimeoutName);
+                }
+
+                MarkdownContent = updatedMarkdown;
+                VdmContent = newVdm;
+
+                LoadMarkdownAndVdm(mdPath);
+
+                SelectedGuiElement = GuiElements.FirstOrDefault(g =>
+                    g.Type == GuiElementType.Timeout &&
+                    !string.IsNullOrWhiteSpace(g.Name) &&
+                    string.Equals(g.Name.Trim(), newTimeoutName, StringComparison.Ordinal));
+
+                SelectedBranchIndex = null;
+            }
+            catch
+            {
+                await Application.Current.MainPage.DisplayAlert("エラー", "タイムアウト編集に失敗しました。", "OK");
+            }
+        }
+        private sealed class TimeoutDef
+        {
+            public string TimeoutName { get; set; } = "";
+            public string Target { get; set; } = "";
+        }
+
+        private TimeoutDef? ParseTimeoutDefinitionLine(string line)
+        {
+            if (line == null) return null;
+
+            var raw = line.Trim();
+            if (!raw.StartsWith("- ")) return null;
+
+            var content = raw.Substring(2).Trim();
+
+            // "A → B" の形
+            int arrow = content.IndexOf('→');
+            string left = arrow >= 0 ? content.Substring(0, arrow).Trim() : content;
+            string right = arrow >= 0 ? content.Substring(arrow + 1).Trim() : "";
+
+            // "〇〇で..." の "〇〇" を TimeoutName にする（Converter準拠）
+            int de = left.IndexOf('で');
+            string timeoutName = de > 0 ? left.Substring(0, de).Trim() : left.Trim();
+
+            if (string.IsNullOrWhiteSpace(timeoutName)) return null;
+
+            return new TimeoutDef
+            {
+                TimeoutName = timeoutName,
+                Target = right
+            };
+        }
+
+        // 元のインデントを維持して "- {newName}でタイムアウト" (+ " → target") を組み立てる
+        private string BuildTimeoutDefinitionLine(string originalLine, string newTimeoutName, string newTarget)
+        {
+            var raw = originalLine ?? "";
+            var trimStart = raw.TrimStart();
+            int lead = raw.Length - trimStart.Length;
+            string indent = raw.Substring(0, Math.Max(0, lead));
+
+            var baseText = $"- {newTimeoutName}でタイムアウト";
+            if (!string.IsNullOrWhiteSpace(newTarget))
+                baseText += $" → {newTarget}";
+
+            return indent + baseText;
+        }
+
+        private string UpdateTimeoutReferencesInEventList(string markdown, string oldTimeoutName, string newTimeoutName, string oldTarget, string newTarget)
+        {
+            if (markdown == null) markdown = string.Empty;
+
+            var lines = markdown.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).ToList();
+            bool inEventList = false;
+            bool changed = false;
+
+            for (int i = 0; i < lines.Count; i++)
+            {
+                var raw = lines[i];
+                var trimStart = raw.TrimStart();
+                var trim = raw.Trim();
+
+                if (trimStart.StartsWith("### イベント一覧", StringComparison.Ordinal))
+                {
+                    inEventList = true;
+                    continue;
+                }
+                if (inEventList && (trimStart.StartsWith("### ", StringComparison.Ordinal) || trimStart.StartsWith("## ", StringComparison.Ordinal) || trimStart.StartsWith("# ", StringComparison.Ordinal)))
+                {
+                    inEventList = false;
+                }
+                if (!inEventList) continue;
+
+                // ネスト（分岐）は触らない
+                if (raw.StartsWith("  ") || raw.StartsWith("\t")) continue;
+
+                if (!trimStart.StartsWith("- ", StringComparison.Ordinal)) continue;
+
+                string content = trimStart.Substring(2).Trim();
+                int arrow = content.IndexOf('→');
+                if (arrow < 0) continue;
+
+                string left = content.Substring(0, arrow).Trim();
+                string right = content.Substring(arrow + 1).Trim();
+
+                // タイムアウト系っぽい左辺だけ対象（誤爆防止）
+                // 例: "80秒でタイムアウト", "80秒でタイムアウト発生", "タイムアウト" など
+                bool looksTimeout = left.Contains("タイムアウト", StringComparison.Ordinal) &&
+                                    (left.Contains(oldTimeoutName, StringComparison.Ordinal) || string.Equals(oldTimeoutName, "タイムアウト", StringComparison.Ordinal));
+
+                if (!looksTimeout) continue;
+
+                // 左辺中の oldTimeoutName を newTimeoutName に置換（oldNameが含まれている場合のみ）
+                if (!string.Equals(oldTimeoutName, newTimeoutName, StringComparison.Ordinal) && left.Contains(oldTimeoutName, StringComparison.Ordinal))
+                {
+                    left = left.Replace(oldTimeoutName, newTimeoutName);
+                }
+
+                // 遷移先の更新（oldTarget→newTarget を指定している場合のみ）
+                if (!string.IsNullOrWhiteSpace(newTarget))
+                {
+                    if (string.IsNullOrWhiteSpace(oldTarget) || string.Equals(right, oldTarget, StringComparison.Ordinal))
+                    {
+                        right = newTarget;
+                    }
+                }
+
+                int lead = raw.Length - trimStart.Length;
+                string indent = raw.Substring(0, lead);
+                lines[i] = indent + "- " + left + " → " + right;
+                changed = true;
+            }
+
+            return changed ? string.Join(Environment.NewLine, lines) : markdown;
+        }
+
 
         [RelayCommand]
         private async Task AddEventAsync()

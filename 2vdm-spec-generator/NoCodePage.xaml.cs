@@ -115,7 +115,7 @@ namespace _2vdm_spec_generator
                             }
                             else
                             {
-                                options = new[] { "編集", "削除", "プロパティ" };
+                                options = new[] { "編集", "削除" };
                             }
 
                             var choice = await Shell.Current.DisplayActionSheet(title, "キャンセル", null, options);
@@ -129,22 +129,10 @@ namespace _2vdm_spec_generator
                                 return;
                             }
 
-                            if (choice == "プロパティ")
-                            {
-                                // 簡易プロパティ表示
-                                var sb = new System.Text.StringBuilder();
-                                sb.AppendLine($"種類: {el.Type}");
-                                sb.AppendLine($"名前: {el.Name}");
-                                if (!string.IsNullOrWhiteSpace(el.Target)) sb.AppendLine($"ターゲット: {el.Target}");
-                                if (!string.IsNullOrWhiteSpace(el.Description)) sb.AppendLine($"説明: {el.Description}");
-                                await Application.Current.MainPage.DisplayAlert("プロパティ", sb.ToString(), "OK");
-                                return;
-                            }
-
                             if (choice == "編集")
                             {
                                 // 編集は現状未実装（ここで名前変更などの実装を追加可能）
-                                await Application.Current.MainPage.DisplayAlert("編集", "編集機能は未実装です。", "OK");
+                                await vm.EditSelectedNodeAsync();
                                 return;
                             }
                         }
