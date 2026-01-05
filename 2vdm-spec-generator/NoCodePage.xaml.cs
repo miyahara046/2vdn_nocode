@@ -106,47 +106,102 @@ namespace _2vdm_spec_generator
                             }
                             vm.SelectedBranchIndex = branchIndex;
 
-                            // 表示する選択肢を組み立て
+                            // 表示する選択肢を組み立て（ノード種別ごと）
                             string title = branchIndex.HasValue ? "分岐操作" : "ノード操作";
                             string[] options;
+
                             if (branchIndex.HasValue)
                             {
-                                options = new[] { "編集", "削除" };
+                                // 分岐は基本これだけでOK（必要なら「分岐コピー」「分岐追加」なども足せる）
+                                options = new[] { "分岐編集", "分岐削除" };
                             }
                             else
                             {
-                                options = new[] { "編集", "削除", "プロパティ" };
+                                options = el.Type switch
+                                {
+                                    GuiElementType.Button => new[] { "イベント追加","コピー", "貼り付け", "ボタン名変更", "削除" },
+                                    GuiElementType.Screen => new[] { "開く", "コピー", "貼り付け", "画面名変更", "削除"},
+                                    GuiElementType.Event => el.IsConditional
+                                                                ? new[] { "分岐編集", "削除" }
+                                                                : new[] { "イベント変更", "削除" },
+                                    GuiElementType.Timeout => new[] { "タイムアウト編集", "削除" },
+                                    _ => new[] { "編集", "削除" }
+                                };
                             }
 
                             var choice = await Shell.Current.DisplayActionSheet(title, "キャンセル", null, options);
 
                             if (string.IsNullOrWhiteSpace(choice) || choice == "キャンセル") return;
-
-                            if (choice == "削除")
-                            {
-                                // ViewModel の既存削除処理を利用
-                                await vm.DeleteSelectedGuiElementAsync();
+                            if(choice == "開く")
+{
+                                _ = vm.OpenFileForScreen(el?.Name);
                                 return;
                             }
 
-                            if (choice == "プロパティ")
+                            if (choice == "コピー")
                             {
-                                // 簡易プロパティ表示
-                                var sb = new System.Text.StringBuilder();
-                                sb.AppendLine($"種類: {el.Type}");
-                                sb.AppendLine($"名前: {el.Name}");
-                                if (!string.IsNullOrWhiteSpace(el.Target)) sb.AppendLine($"ターゲット: {el.Target}");
-                                if (!string.IsNullOrWhiteSpace(el.Description)) sb.AppendLine($"説明: {el.Description}");
-                                await Application.Current.MainPage.DisplayAlert("プロパティ", sb.ToString(), "OK");
+                                await vm.CopySelectedNodeAsync();
+                                return;
+                            }
+
+                            if (choice == "貼り付け")
+                            {
+                                await vm.PasteCopiedNodeAsync();
+                                return;
+                            }
+
+                            if (choice == "ボタン名変更")
+                            {
+                                await vm.RenameSelectedButtonAsync();
+                                return;
+                            }
+
+                            if (choice == "画面名変更")
+                            {
+                                await vm.RenameSelectedScreenAsync();
+                                return;
+                            }
+
+                            if (choice == "イベント変更")
+                            {
+                                await vm.EditSelectedEventAsync();
+                                return;
+                            }
+
+                            if (choice == "タイムアウト編集")
+                            {
+                                await vm.EditSelectedNodeAsync();
+                                return;
+                            }
+
+                            if (choice == "分岐編集")
+                            {
+                                // 分岐が選択されていない場合でも、分岐イベントなら「どの分岐を編集するか」UIにするなど拡張可能
+                                await vm.EditSelectedBranchAsync();
+                                return;
+                            }
+
+                            if (choice == "分岐削除" || choice == "削除")
+                            {
+                                // 既存削除（分岐選択時は分岐削除、通常はノード削除にしてもよい）
+                                // いまの DeleteSelectedGuiElementAsync が分岐対応済みならそのまま使える
+                                vm.DeleteSelectedGuiElementCommand?.Execute(null);
                                 return;
                             }
 
                             if (choice == "編集")
                             {
-                                // 編集は現状未実装（ここで名前変更などの実装を追加可能）
-                                await Application.Current.MainPage.DisplayAlert("編集", "編集機能は未実装です。", "OK");
+                                // 汎用編集（EditSelectedNodeAsync がある場合）
+                                await vm.EditSelectedNodeAsync();
                                 return;
                             }
+                            if (choice == "イベント追加")
+                            {
+                                vm.AddEventCommand.Execute(null);
+                                return;
+                            }
+
+
                         }
                         catch
                         {
