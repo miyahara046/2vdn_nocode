@@ -10,6 +10,8 @@ using Microsoft.Maui.ApplicationModel; // MainThread
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Input;
 using Windows.UI.Input; // for PointerPoint etc (API surfaces)
+using Microsoft.UI.Xaml.Controls;
+using Windows.Foundation;
 #endif
 
 namespace _2vdm_spec_generator.View
@@ -22,6 +24,11 @@ namespace _2vdm_spec_generator.View
         private GuiElement _draggedNode = null;
         private PointF _dragOffset;
 
+        // 追加: ダブルクリック検出用フィールド
+        private DateTime _lastLeftClickTime = DateTime.MinValue;
+        private GuiElement _lastLeftClickElement = null;
+        private const int DoubleClickThresholdMs = 400;
+
         private const float SnapSize = 50f;
         private const float LeftColumnX = 20f;
         private const float RightColumnX = 350f;
@@ -30,8 +37,15 @@ namespace _2vdm_spec_generator.View
         public Action<GuiElement> NodeClicked { get; set; }
         public Action<GuiElement, int?> BranchClicked { get; set; }
 
-        // 追加: 右クリックイベント
+        // 既存: 右クリックの古い用途は置き換えます（画面はダブルクリックに）
         public Action<GuiElement> NodeRightClicked { get; set; }
+
+        // 追加: ポップアップ（コンテキストメニュー）要求を View に通知する
+        // actionKey には "edit"/"delete"/"properties"/"deleteBranch:{index}" 等を入れます
+        public Action<GuiElement, string> NodeContextRequested { get; set; }
+
+        // 追加: ノードのダブルクリック（特に Screen 開く用）
+        public Action<GuiElement> NodeDoubleClicked { get; set; }
 
         public GuiDiagramRenderer()
         {
@@ -42,19 +56,15 @@ namespace _2vdm_spec_generator.View
                 Drawable = _drawable,
                 BackgroundColor = Colors.White,
                 InputTransparent = false,
-                // 横幅が親に引き伸ばされないように Start にする（ScrollView が横スクロールを検出しやすくする）
                 HorizontalOptions = LayoutOptions.Start,
                 VerticalOptions = LayoutOptions.Start
             };
 
-            // 内部で ScrollView を持たず、親（XAML）の ScrollView に任せる
             Content = _graphicsView;
 
-            // 自身も Start にして親 ScrollView の測定が正しく働くようにする
             this.HorizontalOptions = LayoutOptions.Start;
             this.VerticalOptions = LayoutOptions.Start;
 
-            // ハンドラー変更イベントは GraphicsView のみに登録（プラットフォーム入力はここでフック）
             _graphicsView.HandlerChanged += GraphicsView_HandlerChanged;
 
 #if !WINDOWS
@@ -92,29 +102,26 @@ namespace _2vdm_spec_generator.View
             var props = e.GetCurrentPoint(ui).Properties;
             bool isRight = props.IsRightButtonPressed;
 
+            float px = (float)pt.X;
+            float py = (float)pt.Y;
+
             if (isRight)
             {
-                // 右クリック時はドラッグ開始せずヒットテストのみ行い、該当 Screen ノードを報告する
-                float px = (float)pt.X;
-                float py = (float)pt.Y;
-
-                // ノード本体のヒットテスト
+                // 右クリック時はドラッグ開始せずヒットテストのみ行い、該当ノードを報告する
+                // ノード本体のヒットテスト（すべての要素タイプを対象）
                 foreach (var el in _drawable.Elements.AsEnumerable().Reverse())
                 {
                     var rect = new RectF(el.X, el.Y, GuiDiagramDrawable.NodeWidth, GuiDiagramDrawable.NodeHeight);
                     if (rect.Contains(px, py))
                     {
-                        if (el.Type == GuiElementType.Screen)
-                        {
-                            NodeRightClicked?.Invoke(el);
-                            e.Handled = true;
-                            return;
-                        }
-                        // 画面以外は無視する（必要なら拡張）
+                        // 画面(Screen) 以外もコンテキスト要求を送る
+                        NodeContextRequested?.Invoke(el, "context");
+                        e.Handled = true;
+                        return;
                     }
                 }
 
-                // ブランチ領域のヒットテスト（ダイヤモンドや条件領域）
+                // ブランチ領域（条件領域やダイヤモンド）も判定して、分岐インデックス情報を渡す
                 if (_drawable.BranchVisuals != null && _drawable.BranchVisuals.Count > 0)
                 {
                     float condW = GuiDiagramDrawable.NodeWidth * 0.9f;
@@ -137,9 +144,10 @@ namespace _2vdm_spec_generator.View
                         if (condRect.Contains(px, py) || diamondRect.Contains(px, py))
                         {
                             var parent = bv.ParentEvent;
-                            if (parent != null && parent.Type == GuiElementType.Screen)
+                            if (parent != null)
                             {
-                                NodeRightClicked?.Invoke(parent);
+                                // 分岐コンテキストを要求する（ actionKey に分岐インデックス情報を含める）
+                                NodeContextRequested?.Invoke(parent, $"branch:{bv.BranchIndex}");
                                 e.Handled = true;
                                 return;
                             }
@@ -147,8 +155,80 @@ namespace _2vdm_spec_generator.View
                     }
                 }
 
-                // 右クリックで対象がなければ何もしない
+                // 対象がなければ何もしない
                 return;
+            }
+
+            // 左クリック（または右クリック以外）のときはダブルクリック判定を行う
+            // 先にヒットテストしてクリック対象の要素を特定（ブランチは親イベントを参照）
+            GuiElement clickedElement = null;
+            int? clickedBranchIndex = null;
+
+            foreach (var el in _drawable.Elements.AsEnumerable().Reverse())
+            {
+                var rect = new RectF(el.X, el.Y, GuiDiagramDrawable.NodeWidth, GuiDiagramDrawable.NodeHeight);
+                if (rect.Contains(px, py))
+                {
+                    clickedElement = el;
+                    break;
+                }
+            }
+
+            if (clickedElement == null && _drawable.BranchVisuals != null && _drawable.BranchVisuals.Count > 0)
+            {
+                float condW = GuiDiagramDrawable.NodeWidth * 0.9f;
+                float condH = GuiDiagramDrawable.NodeHeight * 0.7f;
+                float diamondW = GuiDiagramDrawable.NodeWidth * 0.8f;
+                float diamondH = GuiDiagramDrawable.NodeHeight * 0.8f;
+                float midGap = 24f;
+                float condRightShift = 40f;
+
+                foreach (var bv in _drawable.BranchVisuals)
+                {
+                    float condCenterX = bv.CenterX - (diamondW / 2f + midGap / 2f + condW / 2f) + condRightShift;
+                    var condCenter = new PointF(condCenterX, bv.CenterY);
+                    var condRect = new RectF(condCenter.X - condW / 2f, condCenter.Y - condH / 2f, condW, condH);
+
+                    float targetCenterX = bv.CenterX + (diamondW / 2f + midGap / 2f);
+                    var targetCenter = new PointF(targetCenterX, bv.CenterY);
+                    var diamondRect = new RectF(targetCenter.X - diamondW / 2f, targetCenter.Y - diamondH / 2f, diamondW, diamondH);
+
+                    if (condRect.Contains(px, py) || diamondRect.Contains(px, py))
+                    {
+                        if (bv.ParentEvent != null)
+                        {
+                            clickedElement = bv.ParentEvent;
+                            clickedBranchIndex = bv.BranchIndex;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // ダブルクリック判定：対象が Screen（あるいは Screen に対応する分岐）で、短時間で同じ要素を2回
+            if (clickedElement != null && clickedElement.Type == GuiElementType.Screen)
+            {
+                var now = DateTime.UtcNow;
+                if (_lastLeftClickElement != null && ReferenceEquals(_lastLeftClickElement, clickedElement)
+                    && (now - _lastLeftClickTime).TotalMilliseconds <= DoubleClickThresholdMs)
+                {
+                    // ダブルクリック確定
+                    NodeDoubleClicked?.Invoke(clickedElement);
+                    // reset
+                    _lastLeftClickTime = DateTime.MinValue;
+                    _lastLeftClickElement = null;
+                    e.Handled = true;
+                    return;
+                }
+                // 単発クリックは記録してドラッグ処理へ（ドラッグは TryStartDrag に任せる）
+                _lastLeftClickElement = clickedElement;
+                _lastLeftClickTime = now;
+            }
+            else
+            {
+                // 画面以外のクリックはダブルクリック対象外にする（クリック記録をクリア）
+                _lastLeftClickElement = null;
+                _lastLeftClickTime = DateTime.MinValue;
             }
 
             // 右クリックでない場合は既存の処理（ドラッグ開始）を行う
@@ -462,10 +542,15 @@ namespace _2vdm_spec_generator.View
 
         private static float Snap(float value, float grid) => (float)(Math.Round(value / grid) * grid);
 
-        public void Render(IEnumerable<GuiElement> elements)
+        // Render に画面一覧（画面管理クラス由来の名前集合）を渡せるようにした
+        public void Render(IEnumerable<GuiElement> elements, IEnumerable<string> screenNames = null)
         {
             var list = elements?.ToList() ?? new();
             _drawable.Elements = list;
+
+            // 外部から画面名集合が渡されたら Drawable にセット（Drawable 内で正規化して利用する）
+            _drawable.ScreenNameSet = screenNames ?? null;
+
             _drawable.ArrangeNodes();
 
             float maxY = 0f;
@@ -473,15 +558,11 @@ namespace _2vdm_spec_generator.View
                 maxY = _drawable.Elements.Max(e => e.Y + GuiDiagramDrawable.NodeHeight);
 
             var height = Math.Max(maxY + 120f, 300f);
-
-            // 横幅はコンテンツに応じて変える（必要に応じて計算式を調整）
             var width = Math.Max(1000f, GuiDiagramDrawable.NodeWidth * 4f + 200f);
 
             _graphicsView.HeightRequest = height;
             _graphicsView.WidthRequest = width;
 
-            // 重要: ContentView / GraphicsView を Start にしているため、ここで自身の要求サイズを設定して
-            // 親の ScrollView が横幅を超えていると判定できるようにする
             this.WidthRequest = width;
             this.HeightRequest = height;
 

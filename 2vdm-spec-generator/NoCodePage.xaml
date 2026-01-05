@@ -28,7 +28,7 @@
         </MenuBarItem>
     </ContentPage.MenuBarItems>
 
-    <Grid RowDefinitions="0.15*,0.85*" ColumnDefinitions="1*,2*,2*">
+    <Grid RowDefinitions="0.15*,0.85*" ColumnDefinitions="1*,3*,2*">
 
         <!-- 上部操作ボタン -->
         <ScrollView Grid.Row="0" Grid.ColumnSpan="3" Orientation="Horizontal" Padding="10">
@@ -40,40 +40,44 @@
                 <Button Text="ボタンの追加" Command="{Binding AddBottonCommand}" IsVisible="{Binding IsClassAllButtonVisible}"/>
                 <Button Text="イベントの追加" Command="{Binding AddEventCommand}" IsVisible="{Binding IsClassAllButtonVisible}"/>
                 <Button Text="タイムアウトの追加" Command="{Binding AddTimeoutEventCommand}" IsVisible="{Binding IsClassAllButtonVisible}"/>
+                <Button Text="クラス名（画面名）の変更" Command="{Binding RenameClassCommand}" IsVisible="{Binding IsClassAllButtonVisible}"/>
                 <Button Text="削除" Command="{Binding DeleteSelectedGuiElementCommand}"/>
             </HorizontalStackLayout>
         </ScrollView>
 
         <!-- 左側：ファイル一覧 -->
         <Border Grid.Row="1" Grid.Column="0" Stroke="Gray" StrokeThickness="1" Padding="5" Margin="5">
-            <CollectionView ItemsSource="{Binding FolderItems}">
+            <CollectionView ItemsSource="{Binding FolderItems}"
+                            SelectionMode="Single"
+                            SelectedItem="{Binding SelectedItem, Mode=TwoWay}">
                 <CollectionView.ItemTemplate>
                     <DataTemplate x:DataType="vm:FolderItem">
-                        <HorizontalStackLayout Padding="0,2" IsVisible="{Binding IsVisible}" Spacing="2">
+                        <HorizontalStackLayout Padding="0,2"
+                                               IsVisible="{Binding IsVisible}"
+                                               Spacing="2"
+                                               BackgroundColor="{Binding ., Converter={StaticResource SelectedToColorConverter}, ConverterParameter={x:Reference Page}}">
+                            <HorizontalStackLayout.GestureRecognizers>
+                                <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type vm:NoCodePageViewModel}}, Path=SelectItemCommand}"
+                                                      CommandParameter="{Binding}" />
+                            </HorizontalStackLayout.GestureRecognizers>
 
-                            <!-- フォルダ折りたたみラベル -->
+                            <!-- フォルダ折りたたみラベル-->
                             <Label Text="{Binding IsExpanded, Converter={StaticResource BoolToExpandCollapseConverter}}"
                                    IsVisible="{Binding IsFolder}"
                                    FontSize="15"
                                    VerticalOptions="Center"
-                                       TextColor="Black">
+                                   TextColor="Black">
                                 <Label.GestureRecognizers>
                                     <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type vm:NoCodePageViewModel}}, Path=ToggleExpandCommand}"
                                                           CommandParameter="{Binding}" />
                                 </Label.GestureRecognizers>
                             </Label>
 
-                            <!-- ファイル / フォルダ名 -->
+                            <!-- ファイル / フォルダ名-->
                             <Label Text="{Binding Name}"
                                    VerticalOptions="Center"
                                    Padding="{Binding Level, Converter={StaticResource LevelToIndentConverter}}"
-                                   BackgroundColor="{Binding ., Converter={StaticResource SelectedToColorConverter}, ConverterParameter={x:Reference Page}}"> 
-                                <Label.GestureRecognizers>
-                                    <TapGestureRecognizer Command="{Binding Source={RelativeSource AncestorType={x:Type vm:NoCodePageViewModel}}, Path=SelectItemCommand}"
-                                                          CommandParameter="{Binding}" />
-                                </Label.GestureRecognizers>
-                            </Label>
-
+                                   HorizontalOptions="FillAndExpand" />
                         </HorizontalStackLayout>
                     </DataTemplate>
                 </CollectionView.ItemTemplate>
@@ -84,7 +88,8 @@
         <!-- 中央：GUI表示（ダイアグラム） -->
         <Border Grid.Row="1" Grid.Column="1" Stroke="Gray" StrokeThickness="1" Padding="10" Margin="5">
             <Grid RowDefinitions="Auto,*">
-                <Label Text="Condition Transition Map" FontSize="16" FontAttributes="Bold" Margin="0,0,0,5"/>
+                <!-- ここをバインドに変更 -->
+                <Label Text="{Binding DiagramTitle}" FontSize="16" FontAttributes="Bold" Margin="0,0,0,5"/>
 
                 <!-- ScrollView を縦横スクロール可能に変更 -->
                 <ScrollView Grid.Row="1" VerticalOptions="FillAndExpand" HorizontalOptions="FillAndExpand" Orientation="Both">
