@@ -945,8 +945,8 @@ namespace _2vdm_spec_generator.ViewModel
             }
 
             string newTarget = await Shell.Current.DisplayPromptAsync(
-                "イベント遷移先変更",
-                $"遷移先を変更する（現在: \"{oldTarget}\"）\n新しい遷移先を入力してください。",
+                "イベント変更",
+                $"イベントを変更する（現在: \"{oldTarget}\"）\n新しいイベントを入力してください。",
                 "OK", "キャンセル",
                 placeholder: "例: 画面A",
                 initialValue: oldTarget
@@ -1396,7 +1396,7 @@ namespace _2vdm_spec_generator.ViewModel
 
 
         [RelayCommand]
-        private async Task AddEventAsync()
+        public async Task AddEventAsync()
         {
             if (SelectedItem == null || !SelectedItem.IsFile) return;
 
@@ -1412,13 +1412,33 @@ namespace _2vdm_spec_generator.ViewModel
                 return;
             }
 
-            string selectedButton = await Shell.Current.DisplayActionSheet(
-                "イベントを追加するボタンを選んでください",
-                "キャンセル", null,
-                buttonNames
-            );
 
-            if (string.IsNullOrEmpty(selectedButton) || selectedButton == "キャンセル") return;
+            string selectedButton = null;
+
+            if (SelectedGuiElement?.Type == GuiElementType.Button &&
+                !string.IsNullOrWhiteSpace(SelectedGuiElement.Name))
+            {
+                var candidate = SelectedGuiElement.Name.Trim();
+
+                // 念のため、このファイル内のボタンとして存在するかチェック
+                if (buttonNames.Any(b => string.Equals(b, candidate, StringComparison.OrdinalIgnoreCase)))
+                {
+                    selectedButton = candidate;
+                }
+            }
+
+            
+            if (string.IsNullOrWhiteSpace(selectedButton))
+            {
+                selectedButton = await Shell.Current.DisplayActionSheet(
+                    "イベントを追加するボタンを選んでください",
+                    "キャンセル", null,
+                    buttonNames
+                );
+
+                if (string.IsNullOrEmpty(selectedButton) || selectedButton == "キャンセル") return;
+            }
+
 
             bool isConditional = await Shell.Current.DisplayAlert(
                 "条件分岐イベント",

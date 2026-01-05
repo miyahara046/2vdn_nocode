@@ -119,7 +119,7 @@ namespace _2vdm_spec_generator
                             {
                                 options = el.Type switch
                                 {
-                                    GuiElementType.Button => new[] { "コピー", "貼り付け", "ボタン名変更", "削除" },
+                                    GuiElementType.Button => new[] { "イベント追加","コピー", "貼り付け", "ボタン名変更", "削除" },
                                     GuiElementType.Screen => new[] { "開く", "コピー", "貼り付け", "画面名変更", "削除"},
                                     GuiElementType.Event => el.IsConditional
                                                                 ? new[] { "分岐編集", "削除" }
@@ -162,7 +162,7 @@ namespace _2vdm_spec_generator
                                 return;
                             }
 
-                            if (choice == "遷移先変更")
+                            if (choice == "イベント変更")
                             {
                                 await vm.EditSelectedEventAsync();
                                 return;
@@ -195,6 +195,12 @@ namespace _2vdm_spec_generator
                                 await vm.EditSelectedNodeAsync();
                                 return;
                             }
+                            if (choice == "イベント追加")
+                            {
+                                vm.AddEventCommand.Execute(null);
+                                return;
+                            }
+
 
                         }
                         catch
