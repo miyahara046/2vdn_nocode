@@ -80,8 +80,10 @@ namespace _2vdm_spec_generator.View
 
             var opList = Elements.Where(e => e.Type == GuiElementType.Operation).ToList();
 
-            var timeoutsByName = Elements.Where(e => e.Type == GuiElementType.Timeout && !string.IsNullOrWhiteSpace(e.Name))
-                                         .ToDictionary(e => e.Name, e => e);
+            var timeoutsByName = Elements
+    .Where(e => e.Type == GuiElementType.Timeout && !string.IsNullOrWhiteSpace(e.Name))
+    .GroupBy(e => e.Name.Trim(), StringComparer.OrdinalIgnoreCase)
+    .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
             foreach (var evt in Elements.Where(e => e.Type == GuiElementType.Event))
             {
                 if (!string.IsNullOrWhiteSpace(evt.Target) && timeoutsByName.TryGetValue(evt.Target, out var timeoutEl))
@@ -234,8 +236,11 @@ namespace _2vdm_spec_generator.View
 
             ArrangeNodes();
 
-            var positions = Elements.Where(e => !string.IsNullOrWhiteSpace(e.Name))
-                            .ToDictionary(e => e.Name, e => new PointF(e.X, e.Y));
+            var positions = Elements
+    .Where(e => !string.IsNullOrWhiteSpace(e.Name))
+    .GroupBy(e => e.Name.Trim(), StringComparer.OrdinalIgnoreCase)
+    .ToDictionary(g => g.Key, g => new PointF(g.First().X, g.First().Y), StringComparer.OrdinalIgnoreCase);
+
 
             var normPositions = new Dictionary<string, PointF>(StringComparer.OrdinalIgnoreCase);
             foreach (var kv in positions)

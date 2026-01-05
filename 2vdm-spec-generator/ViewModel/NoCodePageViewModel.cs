@@ -78,6 +78,29 @@ namespace _2vdm_spec_generator.ViewModel
 #endif
         }
 
+        private CopiedNode _copiedNode;
+
+        private sealed class CopiedNode
+        {
+            public GuiElementType Type { get; set; }
+            public string SourceMarkdownPath { get; set; }
+            public string Name { get; set; }
+
+            // ボタン用：イベントブロック（複数対応）
+            public List<List<string>> EventBlocks { get; set; } = new();
+
+            // 画面用：対応する画面ファイル
+            public string ScreenFilePath { get; set; }
+            public string ScreenFileContent { get; set; }
+
+            // 位置（貼り付け時のオフセット用）
+            public float X { get; set; }
+            public float Y { get; set; }
+        }
+
+        public bool HasCopiedNode => _copiedNode != null;
+
+
         // ===== フォルダ読み込み =====
         private void LoadFolderItems()
         {
@@ -698,7 +721,7 @@ namespace _2vdm_spec_generator.ViewModel
                     break;
 
                 case GuiElementType.Timeout:
-                    await EditSelectedTimeoutAsync();    // 秒数/遷移先
+                    await AddTimeoutEventAsync();    // 秒数/遷移先
                     break;
 
                 default:
@@ -1370,227 +1393,6 @@ namespace _2vdm_spec_generator.ViewModel
 
             return changed ? string.Join(Environment.NewLine, lines) : markdown;
         }
-        public async Task EditSelectedTimeoutAsync()
-        {
-            var el = SelectedGuiElement;
-            if (el == null || el.Type != GuiElementType.Timeout)
-            {
-                await Application.Current.MainPage.DisplayAlert("情報", "タイムアウトノードを選択してから実行してください。", "OK");
-                return;
-            }
-            if (SelectedItem == null || string.IsNullOrWhiteSpace(SelectedItem.FullPath)) return;
-
-            string mdPath = SelectedItem.FullPath;
-
-            try
-            {
-                string currentMarkdown = File.Exists(mdPath) ? File.ReadAllText(mdPath) : string.Empty;
-                var lines = currentMarkdown.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).ToList();
-                if (lines.Count < 2)
-                {
-                    await Application.Current.MainPage.DisplayAlert("情報", "タイムアウト定義（2行目）が存在しません。", "OK");
-                    return;
-                }
-
-                // 画面仕様ファイル（先頭が "## "）でのみ編集する
-                if (!lines[0].TrimStart().StartsWith("## ", StringComparison.Ordinal))
-                {
-                    await Application.Current.MainPage.DisplayAlert("情報", "タイムアウト編集は画面仕様（先頭が '## '）のMarkdownで実行してください。", "OK");
-                    return;
-                }
-
-                // 現在のタイムアウト定義を解析（Converterと同じ思想）
-                var parsed = ParseTimeoutDefinitionLine(lines[1]);
-                if (parsed == null)
-                {
-                    await Application.Current.MainPage.DisplayAlert("情報", "タイムアウト定義行の形式が想定と異なります。", "OK");
-                    return;
-                }
-
-                string oldTimeoutName = parsed.TimeoutName; // 例: "80秒"
-                string oldTarget = parsed.Target;           // 例: "画面A" or ""
-
-                // 新しいタイムアウト名（秒数など）
-                string newTimeoutName = await Shell.Current.DisplayPromptAsync(
-                    "タイムアウト編集（時間）",
-                    $"タイムアウト時間（Name）を入力してください（現在: \"{oldTimeoutName}\"）\n例: 80秒",
-                    "OK", "キャンセル",
-                    placeholder: "例: 80秒",
-                    initialValue: oldTimeoutName
-                );
-                if (string.IsNullOrWhiteSpace(newTimeoutName)) return;
-                newTimeoutName = newTimeoutName.Trim();
-
-                // 新しい遷移先（空OK）
-                string newTarget = await Shell.Current.DisplayPromptAsync(
-                    "タイムアウト編集（遷移先）",
-                    "遷移先を入力してください（空なら遷移先なし）",
-                    "OK", "キャンセル",
-                    placeholder: "例: 画面A",
-                    initialValue: oldTarget ?? string.Empty
-                );
-                if (newTarget == null) return; // キャンセル
-                newTarget = newTarget.Trim();
-
-                // 変更なしなら終了
-                if (string.Equals(oldTimeoutName, newTimeoutName, StringComparison.Ordinal) &&
-                    string.Equals(oldTarget ?? "", newTarget ?? "", StringComparison.Ordinal))
-                {
-                    return;
-                }
-
-                // 2行目を書き換え
-                lines[1] = BuildTimeoutDefinitionLine(lines[1], newTimeoutName, newTarget);
-
-                // イベント一覧の「タイムアウト系」の遷移も合わせて更新（誤爆しない範囲で）
-                var updatedMarkdown = string.Join(Environment.NewLine, lines);
-                updatedMarkdown = UpdateTimeoutReferencesInEventList(updatedMarkdown, oldTimeoutName, newTimeoutName, oldTarget ?? "", newTarget ?? "");
-
-                File.WriteAllText(mdPath, updatedMarkdown);
-
-                // VDM++ 再生成
-                var vdmConv = new MarkdownToVdmConverter();
-                var newVdm = vdmConv.ConvertToVdm(updatedMarkdown);
-                File.WriteAllText(Path.ChangeExtension(mdPath, ".vdmpp"), newVdm);
-
-                // timeoutノード名が変わるので positions もリネーム（位置維持）
-                if (!string.Equals(oldTimeoutName, newTimeoutName, StringComparison.Ordinal))
-                {
-                    RenamePositionEntry(mdPath, oldTimeoutName, newTimeoutName);
-                }
-
-                MarkdownContent = updatedMarkdown;
-                VdmContent = newVdm;
-
-                LoadMarkdownAndVdm(mdPath);
-
-                SelectedGuiElement = GuiElements.FirstOrDefault(g =>
-                    g.Type == GuiElementType.Timeout &&
-                    !string.IsNullOrWhiteSpace(g.Name) &&
-                    string.Equals(g.Name.Trim(), newTimeoutName, StringComparison.Ordinal));
-
-                SelectedBranchIndex = null;
-            }
-            catch
-            {
-                await Application.Current.MainPage.DisplayAlert("エラー", "タイムアウト編集に失敗しました。", "OK");
-            }
-        }
-        private sealed class TimeoutDef
-        {
-            public string TimeoutName { get; set; } = "";
-            public string Target { get; set; } = "";
-        }
-
-        private TimeoutDef? ParseTimeoutDefinitionLine(string line)
-        {
-            if (line == null) return null;
-
-            var raw = line.Trim();
-            if (!raw.StartsWith("- ")) return null;
-
-            var content = raw.Substring(2).Trim();
-
-            // "A → B" の形
-            int arrow = content.IndexOf('→');
-            string left = arrow >= 0 ? content.Substring(0, arrow).Trim() : content;
-            string right = arrow >= 0 ? content.Substring(arrow + 1).Trim() : "";
-
-            // "〇〇で..." の "〇〇" を TimeoutName にする（Converter準拠）
-            int de = left.IndexOf('で');
-            string timeoutName = de > 0 ? left.Substring(0, de).Trim() : left.Trim();
-
-            if (string.IsNullOrWhiteSpace(timeoutName)) return null;
-
-            return new TimeoutDef
-            {
-                TimeoutName = timeoutName,
-                Target = right
-            };
-        }
-
-        // 元のインデントを維持して "- {newName}でタイムアウト" (+ " → target") を組み立てる
-        private string BuildTimeoutDefinitionLine(string originalLine, string newTimeoutName, string newTarget)
-        {
-            var raw = originalLine ?? "";
-            var trimStart = raw.TrimStart();
-            int lead = raw.Length - trimStart.Length;
-            string indent = raw.Substring(0, Math.Max(0, lead));
-
-            var baseText = $"- {newTimeoutName}でタイムアウト";
-            if (!string.IsNullOrWhiteSpace(newTarget))
-                baseText += $" → {newTarget}";
-
-            return indent + baseText;
-        }
-
-        private string UpdateTimeoutReferencesInEventList(string markdown, string oldTimeoutName, string newTimeoutName, string oldTarget, string newTarget)
-        {
-            if (markdown == null) markdown = string.Empty;
-
-            var lines = markdown.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).ToList();
-            bool inEventList = false;
-            bool changed = false;
-
-            for (int i = 0; i < lines.Count; i++)
-            {
-                var raw = lines[i];
-                var trimStart = raw.TrimStart();
-                var trim = raw.Trim();
-
-                if (trimStart.StartsWith("### イベント一覧", StringComparison.Ordinal))
-                {
-                    inEventList = true;
-                    continue;
-                }
-                if (inEventList && (trimStart.StartsWith("### ", StringComparison.Ordinal) || trimStart.StartsWith("## ", StringComparison.Ordinal) || trimStart.StartsWith("# ", StringComparison.Ordinal)))
-                {
-                    inEventList = false;
-                }
-                if (!inEventList) continue;
-
-                // ネスト（分岐）は触らない
-                if (raw.StartsWith("  ") || raw.StartsWith("\t")) continue;
-
-                if (!trimStart.StartsWith("- ", StringComparison.Ordinal)) continue;
-
-                string content = trimStart.Substring(2).Trim();
-                int arrow = content.IndexOf('→');
-                if (arrow < 0) continue;
-
-                string left = content.Substring(0, arrow).Trim();
-                string right = content.Substring(arrow + 1).Trim();
-
-                // タイムアウト系っぽい左辺だけ対象（誤爆防止）
-                // 例: "80秒でタイムアウト", "80秒でタイムアウト発生", "タイムアウト" など
-                bool looksTimeout = left.Contains("タイムアウト", StringComparison.Ordinal) &&
-                                    (left.Contains(oldTimeoutName, StringComparison.Ordinal) || string.Equals(oldTimeoutName, "タイムアウト", StringComparison.Ordinal));
-
-                if (!looksTimeout) continue;
-
-                // 左辺中の oldTimeoutName を newTimeoutName に置換（oldNameが含まれている場合のみ）
-                if (!string.Equals(oldTimeoutName, newTimeoutName, StringComparison.Ordinal) && left.Contains(oldTimeoutName, StringComparison.Ordinal))
-                {
-                    left = left.Replace(oldTimeoutName, newTimeoutName);
-                }
-
-                // 遷移先の更新（oldTarget→newTarget を指定している場合のみ）
-                if (!string.IsNullOrWhiteSpace(newTarget))
-                {
-                    if (string.IsNullOrWhiteSpace(oldTarget) || string.Equals(right, oldTarget, StringComparison.Ordinal))
-                    {
-                        right = newTarget;
-                    }
-                }
-
-                int lead = raw.Length - trimStart.Length;
-                string indent = raw.Substring(0, lead);
-                lines[i] = indent + "- " + left + " → " + right;
-                changed = true;
-            }
-
-            return changed ? string.Join(Environment.NewLine, lines) : markdown;
-        }
 
 
         [RelayCommand]
@@ -1958,6 +1760,7 @@ namespace _2vdm_spec_generator.ViewModel
             }
         }
 
+
         private string RemoveElementFromMarkdown(string markdown, GuiElement el)
         {
             if (markdown == null) markdown = string.Empty;
@@ -2242,6 +2045,451 @@ namespace _2vdm_spec_generator.ViewModel
                 await Application.Current.MainPage.DisplayAlert("エラー", $"ファイル検索中にエラーが発生しました: {ex.Message}", "OK");
             }
         }
+        public async Task CopySelectedNodeAsync()
+        {
+            var el = SelectedGuiElement;
+            if (el == null) return;
+
+            if (SelectedItem == null || string.IsNullOrWhiteSpace(SelectedItem.FullPath))
+                return;
+
+            var mdPath = SelectedItem.FullPath;
+            var md = File.Exists(mdPath) ? File.ReadAllText(mdPath) : "";
+
+            if (el.Type == GuiElementType.Button)
+            {
+                // 画面仕様（先頭 "## "）のファイルだけ
+                var first = md.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).FirstOrDefault()?.Trim() ?? "";
+                if (!first.StartsWith("## ", StringComparison.Ordinal))
+                {
+                    await Application.Current.MainPage.DisplayAlert("情報", "ボタンコピーは画面仕様（先頭が '## '）のMarkdownで行ってください。", "OK");
+                    return;
+                }
+
+                var blocks = ExtractButtonEventBlocks(md, el.Name);
+
+                _copiedNode = new CopiedNode
+                {
+                    Type = GuiElementType.Button,
+                    SourceMarkdownPath = mdPath,
+                    Name = el.Name?.Trim(),
+                    EventBlocks = blocks,
+                    X = el.X,
+                    Y = el.Y
+                };
+
+                await Application.Current.MainPage.DisplayAlert("コピー", $"ボタン \"{_copiedNode.Name}\" をコピーしました（イベント {blocks.Count} ブロック）。", "OK");
+                return;
+            }
+
+            if (el.Type == GuiElementType.Screen)
+            {
+                // 画面一覧（先頭 "# 画面一覧"）上でのコピー想定
+                var first = md.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).FirstOrDefault()?.Trim() ?? "";
+                if (!string.Equals(first, "# 画面一覧", StringComparison.Ordinal))
+                {
+                    await Application.Current.MainPage.DisplayAlert("情報", "画面コピーは「# 画面一覧」ファイル上で行ってください。", "OK");
+                    return;
+                }
+
+                // 対応する画面ファイルを探して内容も保持（見つからなくてもOK）
+                string screenFile = FindMdFileForScreenName(el.Name);
+                string content = (screenFile != null && File.Exists(screenFile)) ? File.ReadAllText(screenFile) : null;
+
+                _copiedNode = new CopiedNode
+                {
+                    Type = GuiElementType.Screen,
+                    SourceMarkdownPath = mdPath,
+                    Name = el.Name?.Trim(),
+                    ScreenFilePath = screenFile,
+                    ScreenFileContent = content,
+                    X = el.X,
+                    Y = el.Y
+                };
+
+                await Application.Current.MainPage.DisplayAlert("コピー", $"画面 \"{_copiedNode.Name}\" をコピーしました。", "OK");
+                return;
+            }
+
+            await Application.Current.MainPage.DisplayAlert("情報", "このノードはコピー対象外です。", "OK");
+        }
+
+        public async Task PasteCopiedNodeAsync()
+        {
+            if (_copiedNode == null)
+            {
+                await Application.Current.MainPage.DisplayAlert("情報", "コピーされたノードがありません。", "OK");
+                return;
+            }
+            if (SelectedItem == null || string.IsNullOrWhiteSpace(SelectedItem.FullPath)) return;
+
+            string mdPath = SelectedItem.FullPath;
+            string md = File.Exists(mdPath) ? File.ReadAllText(mdPath) : "";
+            var first = md.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).FirstOrDefault()?.Trim() ?? "";
+
+            // ===== ボタン貼り付け =====
+            if (_copiedNode.Type == GuiElementType.Button)
+            {
+                if (!first.StartsWith("## ", StringComparison.Ordinal))
+                {
+                    await Application.Current.MainPage.DisplayAlert("情報", "ボタン貼り付けは画面仕様（先頭が '## '）のMarkdownで行ってください。", "OK");
+                    return;
+                }
+
+                string newName = await Shell.Current.DisplayPromptAsync(
+                    "貼り付け（ボタン）",
+                    $"新しいボタン名を入力してください（元: \"{_copiedNode.Name}\"）",
+                    "OK", "キャンセル",
+                    placeholder: "例: ボタン2",
+                    initialValue: _copiedNode.Name
+                );
+                if (string.IsNullOrWhiteSpace(newName)) return;
+                newName = newName.Trim();
+
+                // 既に同名ボタンがあれば中止
+                bool exists = GuiElements.Any(g => g.Type == GuiElementType.Button && !string.IsNullOrWhiteSpace(g.Name)
+                                && string.Equals(g.Name.Trim(), newName, StringComparison.OrdinalIgnoreCase));
+                if (exists)
+                {
+                    await Application.Current.MainPage.DisplayAlert("重複", $"既に同名のボタン \"{newName}\" が存在します。", "OK");
+                    return;
+                }
+
+                string updated = PasteButtonWithEventsIntoMarkdown(md, _copiedNode.Name, newName, _copiedNode.EventBlocks);
+
+                File.WriteAllText(mdPath, updated, Encoding.UTF8);
+
+                // vdm再生成
+                var vdmConv = new MarkdownToVdmConverter();
+                var newVdm = vdmConv.ConvertToVdm(updated);
+                File.WriteAllText(Path.ChangeExtension(mdPath, ".vdmpp"), newVdm, Encoding.UTF8);
+
+                // 位置：新ボタンにオフセットで追加
+                AddOrUpdatePositionEntry(mdPath, newName, _copiedNode.X + 30, _copiedNode.Y + 30);
+
+                MarkdownContent = updated;
+                VdmContent = newVdm;
+                LoadMarkdownAndVdm(mdPath);
+
+                SelectedGuiElement = GuiElements.FirstOrDefault(g => g.Type == GuiElementType.Button
+                    && !string.IsNullOrWhiteSpace(g.Name) && string.Equals(g.Name.Trim(), newName, StringComparison.Ordinal));
+
+                return;
+            }
+
+            // ===== 画面貼り付け =====
+            if (_copiedNode.Type == GuiElementType.Screen)
+            {
+                if (!string.Equals(first, "# 画面一覧", StringComparison.Ordinal))
+                {
+                    await Application.Current.MainPage.DisplayAlert("情報", "画面貼り付けは「# 画面一覧」ファイル上で行ってください。", "OK");
+                    return;
+                }
+
+                string newScreen = await Shell.Current.DisplayPromptAsync(
+                    "貼り付け（画面）",
+                    $"新しい画面名を入力してください（元: \"{_copiedNode.Name}\"）",
+                    "OK", "キャンセル",
+                    placeholder: "例: 画面B",
+                    initialValue: _copiedNode.Name
+                );
+                if (string.IsNullOrWhiteSpace(newScreen)) return;
+                newScreen = newScreen.Trim();
+
+                // 画面一覧に同名があれば中止
+                var lines = md.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).ToList();
+                if (lines.Any(l => string.Equals(l.Trim(), "- " + newScreen, StringComparison.Ordinal)))
+                {
+                    await Application.Current.MainPage.DisplayAlert("重複", $"既に同名の画面 \"{newScreen}\" が存在します。", "OK");
+                    return;
+                }
+
+                string updated = PasteScreenIntoScreenListMarkdown(md, _copiedNode.Name, newScreen);
+                File.WriteAllText(mdPath, updated, Encoding.UTF8);
+
+                // 画面ファイルも複製（元が見つかって内容がある場合）
+                if (!string.IsNullOrWhiteSpace(_copiedNode.ScreenFileContent))
+                {
+                    string newFilePath = CreateScreenFileCopy(_copiedNode.ScreenFilePath, _copiedNode.Name, newScreen, _copiedNode.ScreenFileContent);
+                    // 失敗しても画面一覧だけは増えるので黙殺でOK（必要なら通知）
+                }
+
+                // vdm再生成（必要なら）
+                var vdmConv = new MarkdownToVdmConverter();
+                var newVdm = vdmConv.ConvertToVdm(updated);
+                File.WriteAllText(Path.ChangeExtension(mdPath, ".vdmpp"), newVdm, Encoding.UTF8);
+
+                AddOrUpdatePositionEntry(mdPath, newScreen, _copiedNode.X + 30, _copiedNode.Y + 30);
+
+                MarkdownContent = updated;
+                VdmContent = newVdm;
+                LoadMarkdownAndVdm(mdPath);
+
+                SelectedGuiElement = GuiElements.FirstOrDefault(g => g.Type == GuiElementType.Screen
+                    && !string.IsNullOrWhiteSpace(g.Name) && string.Equals(g.Name.Trim(), newScreen, StringComparison.Ordinal));
+
+                return;
+            }
+
+            await Application.Current.MainPage.DisplayAlert("情報", "このタイプは貼り付け対象外です。", "OK");
+        }
+
+        private List<List<string>> ExtractButtonEventBlocks(string markdown, string buttonName)
+        {
+            var blocks = new List<List<string>>();
+            if (string.IsNullOrWhiteSpace(markdown) || string.IsNullOrWhiteSpace(buttonName)) return blocks;
+
+            var lines = markdown.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).ToList();
+
+            bool inEventList = false;
+            for (int i = 0; i < lines.Count; i++)
+            {
+                string raw = lines[i];
+                string ts = raw.TrimStart();
+                string t = raw.Trim();
+
+                if (ts.StartsWith("### イベント一覧", StringComparison.Ordinal))
+                {
+                    inEventList = true;
+                    continue;
+                }
+                if (inEventList && (ts.StartsWith("### ", StringComparison.Ordinal) || ts.StartsWith("## ", StringComparison.Ordinal)))
+                {
+                    inEventList = false;
+                }
+                if (!inEventList) continue;
+
+                // 親行: "- {button}押下 ..."
+                if (ts.StartsWith("- ", StringComparison.Ordinal))
+                {
+                    string after = ts.Substring(2).Trim();
+                    if (after.StartsWith(buttonName + "押下", StringComparison.Ordinal))
+                    {
+                        var block = new List<string> { raw };
+
+                        // 直下のネスト（分岐行）を取り込む
+                        int j = i + 1;
+                        while (j < lines.Count)
+                        {
+                            var nr = lines[j];
+                            if (string.IsNullOrWhiteSpace(nr)) break;
+                            if (!(nr.StartsWith("  ") || nr.StartsWith("\t"))) break;
+
+                            block.Add(nr);
+                            j++;
+                        }
+
+                        blocks.Add(block);
+                        i = j - 1;
+                    }
+                }
+            }
+
+            return blocks;
+        }
+
+        private string PasteButtonWithEventsIntoMarkdown(string markdown, string oldButton, string newButton, List<List<string>> copiedBlocks)
+        {
+            var lines = markdown.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).ToList();
+
+            // --- 1) ボタン一覧へ挿入 ---
+            int buttonListStart = lines.FindIndex(l => l.TrimStart().StartsWith("### 有効ボタン一覧", StringComparison.Ordinal));
+            if (buttonListStart >= 0)
+            {
+                int insertAt = -1;
+                for (int i = buttonListStart + 1; i < lines.Count; i++)
+                {
+                    var ts = lines[i].TrimStart();
+                    var t = lines[i].Trim();
+
+                    if (string.IsNullOrEmpty(t) || ts.StartsWith("### イベント一覧", StringComparison.Ordinal) || ts.StartsWith("### ", StringComparison.Ordinal) || ts.StartsWith("## ", StringComparison.Ordinal))
+                    {
+                        insertAt = i;
+                        break;
+                    }
+                    if (t == "- " + oldButton)
+                    {
+                        insertAt = i + 1; // 旧ボタンの直後
+                        break;
+                    }
+                }
+                if (insertAt < 0) insertAt = lines.Count;
+                lines.Insert(insertAt, "- " + newButton);
+            }
+
+            // --- 2) イベント一覧へ挿入 ---
+            int eventListStart = lines.FindIndex(l => l.TrimStart().StartsWith("### イベント一覧", StringComparison.Ordinal));
+            if (eventListStart >= 0 && copiedBlocks != null && copiedBlocks.Count > 0)
+            {
+                // 元ボタンのブロック末尾位置を探す
+                int insertAt = -1;
+
+                for (int i = eventListStart + 1; i < lines.Count; i++)
+                {
+                    var ts = lines[i].TrimStart();
+                    if (ts.StartsWith("### ", StringComparison.Ordinal) || ts.StartsWith("## ", StringComparison.Ordinal))
+                    {
+                        insertAt = i; // イベント一覧の末尾
+                        break;
+                    }
+
+                    if (ts.StartsWith("- ", StringComparison.Ordinal))
+                    {
+                        var after = ts.Substring(2).Trim();
+                        if (after.StartsWith(oldButton + "押下", StringComparison.Ordinal))
+                        {
+                            // そのブロック終端まで進める
+                            int j = i + 1;
+                            while (j < lines.Count)
+                            {
+                                var nr = lines[j];
+                                if (string.IsNullOrWhiteSpace(nr)) break;
+                                if (!(nr.StartsWith("  ") || nr.StartsWith("\t"))) break;
+                                j++;
+                            }
+                            insertAt = j; // 旧ブロック直後
+                            break;
+                        }
+                    }
+                }
+                if (insertAt < 0) insertAt = lines.Count;
+
+                // ブロック挿入（ボタン名だけ差し替え）
+                var toInsert = new List<string>();
+                foreach (var block in copiedBlocks)
+                {
+                    foreach (var line in block)
+                    {
+                        // "- 旧押下" の置換（インデントは維持）
+                        string replaced = line.Replace(oldButton + "押下", newButton + "押下", StringComparison.Ordinal);
+                        toInsert.Add(replaced);
+                    }
+                }
+
+                // 1ブロック目の前に空行を入れたいならここで調整（好み）
+                // toInsert.Insert(0, "");
+
+                lines.InsertRange(insertAt, toInsert);
+            }
+
+            return string.Join(Environment.NewLine, lines);
+        }
+
+        private string PasteScreenIntoScreenListMarkdown(string markdown, string oldScreen, string newScreen)
+        {
+            var lines = markdown.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).ToList();
+
+            // "- 旧" の直後に挿入。無ければ末尾
+            int insertAt = -1;
+            for (int i = 0; i < lines.Count; i++)
+            {
+                if (lines[i].Trim() == "- " + oldScreen)
+                {
+                    insertAt = i + 1;
+                    break;
+                }
+            }
+            if (insertAt < 0) insertAt = lines.Count;
+            lines.Insert(insertAt, "- " + newScreen);
+
+            return string.Join(Environment.NewLine, lines);
+        }
+        private string FindMdFileForScreenName(string screenName)
+        {
+            if (string.IsNullOrWhiteSpace(screenName) || string.IsNullOrWhiteSpace(SelectedFolderPath))
+                return null;
+
+            var mdFiles = Directory.GetFiles(SelectedFolderPath, "*.md", SearchOption.AllDirectories);
+
+            var byName = mdFiles.FirstOrDefault(f =>
+                string.Equals(Path.GetFileNameWithoutExtension(f), screenName, StringComparison.OrdinalIgnoreCase));
+            if (byName != null) return byName;
+
+            foreach (var f in mdFiles)
+            {
+                var head = File.ReadLines(f).Take(30);
+                foreach (var line in head)
+                {
+                    var t = line.Trim();
+                    if ((t.StartsWith("# ") || t.StartsWith("## ")) &&
+                        t.IndexOf(screenName, StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        return f;
+                    }
+                }
+            }
+            return null;
+        }
+        private string CreateScreenFileCopy(string sourcePath, string oldScreen, string newScreen, string content)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(sourcePath)) return null;
+
+                var dir = Path.GetDirectoryName(sourcePath);
+                var newPath = Path.Combine(dir, newScreen + ".md");
+                if (File.Exists(newPath)) return null;
+
+                // 先頭の "# " / "## " 行だけ old→new を置換（必要最小限）
+                var lines = content.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).ToList();
+                for (int i = 0; i < Math.Min(lines.Count, 30); i++)
+                {
+                    var t = lines[i].Trim();
+                    if (t.StartsWith("# ") || t.StartsWith("## "))
+                    {
+                        if (lines[i].Contains(oldScreen, StringComparison.Ordinal))
+                        {
+                            lines[i] = lines[i].Replace(oldScreen, newScreen, StringComparison.Ordinal);
+                        }
+                        break;
+                    }
+                }
+
+                File.WriteAllText(newPath, string.Join(Environment.NewLine, lines), Encoding.UTF8);
+                return newPath;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+        private void AddOrUpdatePositionEntry(string mdPath, string name, float x, float y)
+        {
+            try
+            {
+                var posPath = Path.ChangeExtension(mdPath, ".positions.json");
+                List<GuiElementPosition> list = null;
+
+                if (File.Exists(posPath))
+                {
+                    var json = File.ReadAllText(posPath);
+                    list = JsonSerializer.Deserialize<List<GuiElementPosition>>(json) ?? new List<GuiElementPosition>();
+                }
+                else
+                {
+                    list = new List<GuiElementPosition>();
+                }
+
+                var found = list.FirstOrDefault(p => string.Equals((p.Name ?? "").Trim(), name, StringComparison.Ordinal));
+                if (found == null)
+                {
+                    list.Add(new GuiElementPosition { Name = name, X = x, Y = y });
+                }
+                else
+                {
+                    found.X = x; found.Y = y;
+                }
+
+                var opt = new JsonSerializerOptions { WriteIndented = true };
+                File.WriteAllText(posPath, JsonSerializer.Serialize(list, opt), Encoding.UTF8);
+            }
+            catch
+            {
+                // 黙殺
+            }
+        }
+
+
 
         // ヘルパー: FolderItems 内の実インスタンスに SelectedItem を一致させる（見つからなければ代替作成）
         private void ResolveSelectedItemByPath(string path)
