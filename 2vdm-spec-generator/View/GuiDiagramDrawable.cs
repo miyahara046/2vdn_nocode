@@ -202,6 +202,35 @@ namespace _2vdm_spec_generator.View
                 evt.IsFixed = true;
             }
 
+            // --- 重要: ブランチ配置でボタンの Y が変更される可能性があるため、
+            //           ブランチ後に「分岐を持たないイベント」を再同期して
+            //           対象ボタンと Y を揃える ---
+            foreach (var evt in Elements.Where(e => e.Type == GuiElementType.Event && (e.Branches == null || e.Branches.Count == 0)))
+            {
+                GuiElement correspondingButton = null;
+
+                if (!string.IsNullOrWhiteSpace(evt.Name))
+                {
+                    var evtNameNorm = evt.Name.Trim();
+                    correspondingButton = buttonList.FirstOrDefault(b =>
+                        !string.IsNullOrWhiteSpace(b.Name) &&
+                        evtNameNorm.StartsWith(b.Name.Trim(), StringComparison.OrdinalIgnoreCase));
+                }
+
+                if (correspondingButton == null && !string.IsNullOrWhiteSpace(evt.Target))
+                {
+                    correspondingButton = buttonList.FirstOrDefault(b => !string.IsNullOrWhiteSpace(b.Target) && string.Equals(b.Target.Trim(), evt.Target.Trim(), StringComparison.OrdinalIgnoreCase));
+                }
+
+                if (correspondingButton != null)
+                {
+                    // 常にボタンの現在の Y に合わせる（初回読み込みやノード追加時のズレを防ぐ）
+                    evt.X = midColumnX;
+                    evt.Y = correspondingButton.Y;
+                    evt.IsFixed = true;
+                }
+            }
+
             int eventIndex = 0;
             foreach (var el in Elements.Where(e => e.Type == GuiElementType.Event))
             {
@@ -212,7 +241,24 @@ namespace _2vdm_spec_generator.View
                 }
                 eventIndex++;
             }
+            foreach (var btn in buttonList)
+            {
+                if (string.IsNullOrWhiteSpace(btn.Target)) continue;
 
+                var op = opList.FirstOrDefault(o =>
+                !string.IsNullOrWhiteSpace(o.Name) &&
+                string.Equals(o.Name.Trim(), btn.Target.Trim(), StringComparison.OrdinalIgnoreCase));
+
+                if (op == null) continue;
+
+                // ユーザー配置済みは尊重。未配置だけ揃える
+                if (!op.IsFixed && IsUnpositioned(op))
+                {
+                    op.X = opColumnX;
+                    op.Y = btn.Y;    
+                    op.IsFixed = true;
+                }
+            }
             int opIndex = 0;
             foreach (var el in Elements.Where(e => e.Type == GuiElementType.Operation))
             {
@@ -251,6 +297,7 @@ namespace _2vdm_spec_generator.View
             }
 
             // 画面一覧名集合：外部から渡された ScreenNameSet を優先して使い、なければ Elements 内から構築
+            // 修正: ScreenNameSet が渡されていても Elements 内の Screen 名を併せて登録する（初回描画で Elements 側の画面を見落とし赤表示される問題対応）
             var screenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (ScreenNameSet != null)
             {
@@ -260,13 +307,12 @@ namespace _2vdm_spec_generator.View
                     if (!string.IsNullOrEmpty(n)) screenNames.Add(n);
                 }
             }
-            else
+
+            // Elements 側の Screen 名も必ず追加する（ScreenNameSet が不完全なケースへの保険）
+            foreach (var s in Elements.Where(e => e.Type == GuiElementType.Screen && !string.IsNullOrWhiteSpace(e.Name)))
             {
-                foreach (var s in Elements.Where(e => e.Type == GuiElementType.Screen && !string.IsNullOrWhiteSpace(e.Name)))
-                {
-                    var n = NormalizeLabel(s.Name);
-                    if (!string.IsNullOrEmpty(n)) screenNames.Add(n);
-                }
+                var n = NormalizeLabel(s.Name);
+                if (!string.IsNullOrEmpty(n)) screenNames.Add(n);
             }
 
             bool IsTargetInScreenListByCandidate(string candidate)
