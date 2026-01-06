@@ -297,6 +297,7 @@ namespace _2vdm_spec_generator.View
             }
 
             // 画面一覧名集合：外部から渡された ScreenNameSet を優先して使い、なければ Elements 内から構築
+            // 修正: ScreenNameSet が渡されていても Elements 内の Screen 名を併せて登録する（初回描画で Elements 側の画面を見落とし赤表示される問題対応）
             var screenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (ScreenNameSet != null)
             {
@@ -306,13 +307,12 @@ namespace _2vdm_spec_generator.View
                     if (!string.IsNullOrEmpty(n)) screenNames.Add(n);
                 }
             }
-            else
+
+            // Elements 側の Screen 名も必ず追加する（ScreenNameSet が不完全なケースへの保険）
+            foreach (var s in Elements.Where(e => e.Type == GuiElementType.Screen && !string.IsNullOrWhiteSpace(e.Name)))
             {
-                foreach (var s in Elements.Where(e => e.Type == GuiElementType.Screen && !string.IsNullOrWhiteSpace(e.Name)))
-                {
-                    var n = NormalizeLabel(s.Name);
-                    if (!string.IsNullOrEmpty(n)) screenNames.Add(n);
-                }
+                var n = NormalizeLabel(s.Name);
+                if (!string.IsNullOrEmpty(n)) screenNames.Add(n);
             }
 
             bool IsTargetInScreenListByCandidate(string candidate)
