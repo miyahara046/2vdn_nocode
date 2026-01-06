@@ -155,7 +155,9 @@ namespace _2vdm_spec_generator.View
                     }
                 }
 
-                // 対象がなければ何もしない
+                // 対象がなければ空白クリックとして View に通知（ここが無いと空白右クリックで何も起きない）
+                NodeContextRequested?.Invoke(null, null);
+                e.Handled = true;
                 return;
             }
 

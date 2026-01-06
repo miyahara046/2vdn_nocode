@@ -885,5 +885,306 @@ namespace _2vdm_spec_generator.Services
 
             return NormalizeEmptyLines(lines);
         }
+        // =============================
+        // ViewModel から移管した責務（編集・抽出・貼り付け）
+        // =============================
+
+        /// <summary>
+        /// イベント一覧内の "→ 遷移先" 部分を oldTarget -> newTarget に置換する。
+        /// - トップレベルのイベント行（インデントなし）のみ対象。
+        /// - 右辺が oldTarget と完全一致する場合のみ置換（誤爆防止）。
+        /// </summary>
+        public string ReplaceEventTargetInMarkdown(string markdown, string oldTarget, string newTarget)
+        {
+            if (markdown == null) markdown = string.Empty;
+
+            var lines = markdown.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).ToList();
+            bool inEventList = false;
+            bool changed = false;
+
+            for (int i = 0; i < lines.Count; i++)
+            {
+                string raw = lines[i];
+                string trimStart = raw.TrimStart();
+
+                if (trimStart.StartsWith("### イベント一覧", StringComparison.Ordinal))
+                {
+                    inEventList = true;
+                    continue;
+                }
+                if (inEventList && (trimStart.StartsWith("### ", StringComparison.Ordinal)
+                                 || trimStart.StartsWith("## ", StringComparison.Ordinal)
+                                 || trimStart.StartsWith("# ", StringComparison.Ordinal)))
+                {
+                    inEventList = false;
+                }
+                if (!inEventList) continue;
+
+                // ネスト行は対象外
+                if (raw.StartsWith("  ") || raw.StartsWith("\t"))
+                    continue;
+
+                if (!trimStart.StartsWith("- ", StringComparison.Ordinal))
+                    continue;
+
+                string content = trimStart.Substring(2).Trim();
+                int arrowIdx = content.IndexOf('→');
+                if (arrowIdx >= 0)
+                {
+                    string left = content.Substring(0, arrowIdx).Trim();
+                    string right = content.Substring(arrowIdx + 1).Trim();
+
+                    if (string.Equals(right, oldTarget, StringComparison.Ordinal))
+                    {
+                        int lead = raw.Length - trimStart.Length;
+                        string indent = raw.Substring(0, lead);
+                        lines[i] = indent + "- " + left + " → " + newTarget;
+                        changed = true;
+                    }
+                    continue;
+                }
+
+                // "  - 条件 → 画面" のような形式ではなく "- 画面X" のような単体行の置換
+                if (string.Equals(content, oldTarget, StringComparison.Ordinal))
+                {
+                    int lead = raw.Length - trimStart.Length;
+                    string indent = raw.Substring(0, lead);
+                    lines[i] = indent + "- " + newTarget;
+                    changed = true;
+                }
+            }
+
+            return changed ? string.Join(Environment.NewLine, lines) : markdown;
+        }
+
+        /// <summary>
+        /// 条件分岐（ネスト行）を branchIndex 指定で差し替える。
+        /// parentEventLabel はイベント行の左側（例: "ボタン1押下"）を想定。
+        /// </summary>
+        public string ReplaceBranchLineInMarkdown(string markdown, string parentEventLabel, int branchIndex, string newCondition, string newTarget)
+        {
+            if (markdown == null) markdown = string.Empty;
+            if (string.IsNullOrWhiteSpace(parentEventLabel)) return markdown;
+            if (branchIndex < 0) return markdown;
+
+            var lines = markdown.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).ToList();
+
+            bool inEventList = false;
+            bool changed = false;
+
+            for (int i = 0; i < lines.Count; i++)
+            {
+                string raw = lines[i];
+                string ts = raw.TrimStart();
+
+                if (ts.StartsWith("### イベント一覧", StringComparison.Ordinal))
+                {
+                    inEventList = true;
+                    continue;
+                }
+                if (inEventList && (ts.StartsWith("### ", StringComparison.Ordinal)
+                                 || ts.StartsWith("## ", StringComparison.Ordinal)
+                                 || ts.StartsWith("# ", StringComparison.Ordinal)))
+                {
+                    inEventList = false;
+                }
+                if (!inEventList) continue;
+
+                if (!ts.StartsWith("- ", StringComparison.Ordinal)) continue;
+
+                var after = ts.Substring(2).Trim();
+                if (!after.StartsWith(parentEventLabel, StringComparison.Ordinal))
+                    continue;
+
+                int count = -1;
+                int j = i + 1;
+                while (j < lines.Count)
+                {
+                    var nr = lines[j];
+                    if (string.IsNullOrWhiteSpace(nr)) break;
+                    if (!(nr.StartsWith("  ") || nr.StartsWith("\t"))) break;
+
+                    var nts = nr.TrimStart();
+                    if (nts.StartsWith("- ", StringComparison.Ordinal))
+                    {
+                        count++;
+                        if (count == branchIndex)
+                        {
+                            string indent = nr.Substring(0, nr.Length - nts.Length);
+                            lines[j] = indent + "- " + (newCondition ?? string.Empty).Trim() + " → " + (newTarget ?? string.Empty).Trim();
+                            changed = true;
+                            break;
+                        }
+                    }
+                    j++;
+                }
+
+                if (changed) break;
+            }
+
+            return changed ? string.Join(Environment.NewLine, lines) : markdown;
+        }
+
+        /// <summary>
+        /// 指定ボタンに紐づくイベントブロック（親行 + ネスト行）を抽出する。
+        /// </summary>
+        public List<List<string>> ExtractButtonEventBlocks(string markdown, string buttonName)
+        {
+            var blocks = new List<List<string>>();
+            if (string.IsNullOrWhiteSpace(markdown) || string.IsNullOrWhiteSpace(buttonName)) return blocks;
+
+            var lines = markdown.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).ToList();
+
+            bool inEventList = false;
+            for (int i = 0; i < lines.Count; i++)
+            {
+                string raw = lines[i];
+                string ts = raw.TrimStart();
+
+                if (ts.StartsWith("### イベント一覧", StringComparison.Ordinal))
+                {
+                    inEventList = true;
+                    continue;
+                }
+                if (inEventList && (ts.StartsWith("### ", StringComparison.Ordinal) || ts.StartsWith("## ", StringComparison.Ordinal)))
+                {
+                    inEventList = false;
+                }
+                if (!inEventList) continue;
+
+                if (!ts.StartsWith("- ", StringComparison.Ordinal)) continue;
+                string after = ts.Substring(2).Trim();
+                if (!after.StartsWith(buttonName + "押下", StringComparison.Ordinal)) continue;
+
+                var block = new List<string> { raw };
+                int j = i + 1;
+                while (j < lines.Count)
+                {
+                    var nr = lines[j];
+                    if (string.IsNullOrWhiteSpace(nr)) break;
+                    if (!(nr.StartsWith("  ") || nr.StartsWith("\t"))) break;
+                    block.Add(nr);
+                    j++;
+                }
+                blocks.Add(block);
+                i = j - 1;
+            }
+            return blocks;
+        }
+
+        /// <summary>
+        /// ボタン貼り付け（ボタン一覧 + イベント一覧）を Markdown に反映する。
+        /// copiedBlocks は "oldButton 押下" のブロック群で、newButton に置換して挿入される。
+        /// </summary>
+        public string PasteButtonWithEventsIntoMarkdown(string markdown, string oldButton, string newButton, List<List<string>> copiedBlocks)
+        {
+            var lines = (markdown ?? string.Empty).Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).ToList();
+
+            // ボタン一覧へ追加
+            int buttonListStart = lines.FindIndex(l => l.TrimStart().StartsWith("### 有効ボタン一覧", StringComparison.Ordinal));
+            if (buttonListStart >= 0)
+            {
+                int insertAt = -1;
+                for (int i = buttonListStart + 1; i < lines.Count; i++)
+                {
+                    var ts = lines[i].TrimStart();
+                    var t = lines[i].Trim();
+
+                    if (string.IsNullOrEmpty(t) || ts.StartsWith("### イベント一覧", StringComparison.Ordinal)
+                        || ts.StartsWith("### ", StringComparison.Ordinal) || ts.StartsWith("## ", StringComparison.Ordinal))
+                    {
+                        insertAt = i;
+                        break;
+                    }
+                    if (t == "- " + oldButton)
+                    {
+                        insertAt = i + 1;
+                        break;
+                    }
+                }
+                if (insertAt < 0) insertAt = lines.Count;
+
+                if (!lines.Any(l => string.Equals(l.Trim(), "- " + newButton, StringComparison.Ordinal)))
+                    lines.Insert(insertAt, "- " + newButton);
+            }
+
+            // イベント一覧へブロック挿入
+            int eventListStart = lines.FindIndex(l => l.TrimStart().StartsWith("### イベント一覧", StringComparison.Ordinal));
+            if (eventListStart >= 0 && copiedBlocks != null && copiedBlocks.Count > 0)
+            {
+                int insertAt = -1;
+
+                for (int i = eventListStart + 1; i < lines.Count; i++)
+                {
+                    var ts = lines[i].TrimStart();
+                    if (ts.StartsWith("### ", StringComparison.Ordinal) || ts.StartsWith("## ", StringComparison.Ordinal))
+                    {
+                        insertAt = i;
+                        break;
+                    }
+
+                    if (ts.StartsWith("- ", StringComparison.Ordinal))
+                    {
+                        var after = ts.Substring(2).Trim();
+                        if (after.StartsWith(oldButton + "押下", StringComparison.Ordinal))
+                        {
+                            int j = i + 1;
+                            while (j < lines.Count)
+                            {
+                                var nr = lines[j];
+                                if (string.IsNullOrWhiteSpace(nr)) break;
+                                if (!(nr.StartsWith("  ") || nr.StartsWith("\t"))) break;
+                                j++;
+                            }
+                            insertAt = j;
+                            break;
+                        }
+                    }
+                }
+                if (insertAt < 0) insertAt = lines.Count;
+
+                var toInsert = new List<string>();
+                foreach (var block in copiedBlocks)
+                {
+                    foreach (var line in block)
+                    {
+                        string replaced = line.Replace(oldButton + "押下", newButton + "押下", StringComparison.Ordinal);
+                        toInsert.Add(replaced);
+                    }
+                }
+
+                lines.InsertRange(insertAt, toInsert);
+            }
+
+            lines = NormalizeEmptyLines(lines);
+            lines = EnsureButtonBeforeEvent(lines);
+            return string.Join(Environment.NewLine, lines);
+        }
+
+        /// <summary>
+        /// 「# 画面一覧」Markdown に画面を貼り付ける（"- old" の直後に "- new" を挿入）。
+        /// </summary>
+        public string PasteScreenIntoScreenListMarkdown(string markdown, string oldScreen, string newScreen)
+        {
+            var lines = (markdown ?? string.Empty).Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).ToList();
+
+            int insertAt = -1;
+            for (int i = 0; i < lines.Count; i++)
+            {
+                if (lines[i].Trim() == "- " + oldScreen)
+                {
+                    insertAt = i + 1;
+                    break;
+                }
+            }
+            if (insertAt < 0) insertAt = lines.Count;
+
+            if (!lines.Any(l => string.Equals(l.Trim(), "- " + newScreen, StringComparison.Ordinal)))
+                lines.Insert(insertAt, "- " + newScreen);
+
+            lines = NormalizeEmptyLines(lines);
+            return string.Join(Environment.NewLine, lines);
+        }
+
     }
 }
