@@ -19,6 +19,11 @@ namespace _2vdm_spec_generator.ViewModel
 {
     public partial class NoCodePageViewModel : ObservableObject
     {
+        // ===== Services（責務分離）=====
+        private readonly UiToMarkdownConverter _uiToMd = new();
+        private readonly GuiPositionStore _positionStore = new();
+        private readonly ScreenListService _screenListService = new();
+
         // ===== Markdown 正規化 =====
         // 異なるエディタ由来のMarkdown（BOM/改行/NBSPなど）の揺れを吸収する。
         private static string NormalizeMarkdownText(string markdown)
@@ -37,13 +42,13 @@ namespace _2vdm_spec_generator.ViewModel
 
             // 4) 箇条書き記号を "- " に統一（* / • / ⦁）
             var lines = markdown.Split('\n');
-                        for (int i = 0; i < lines.Length; i++)
-                           {
+            for (int i = 0; i < lines.Length; i++)
+            {
                 lines[i] = BulletNormalizeRegex.Replace(
                 lines[i],
                 m => $"{m.Groups["indent"].Value}- "
                                 );
-                            }
+            }
             markdown = string.Join("\n", lines);
             return markdown;
         }
@@ -301,6 +306,8 @@ namespace _2vdm_spec_generator.ViewModel
                 IsScreenListAddButtonVisible = false;
                 IsClassAllButtonVisible = false;
             }
+            // 追加: Renderer に渡す画面名集合（正規化済み）
+            ScreenNamesForRenderer = _screenListService.GetScreenNames(SelectedFolderPath);
 
             var uiConverter = new MarkdownToUiConverter();
             GuiElements = new ObservableCollection<GuiElement>(uiConverter.Convert(MarkdownContent));
@@ -310,8 +317,7 @@ namespace _2vdm_spec_generator.ViewModel
             var displayItem = SelectedItem ?? new FolderItem { FullPath = path, Name = Path.GetFileName(path), Level = 0 };
             DiagramTitle = ExtractDiagramTitleFromMarkdown(MarkdownContent, displayItem);
 
-            // 追加: Renderer に渡す画面名集合（正規化済み）
-            ScreenNamesForRenderer = GetScreenManagementScreenNames();
+
         }
 
         // ===== 新規 Markdown 作成 =====
@@ -444,7 +450,7 @@ namespace _2vdm_spec_generator.ViewModel
                 File.WriteAllText(Path.ChangeExtension(path, ".vdmpp"), newVdm, Encoding.UTF8);
 
                 // 3) 画面一覧ファイル（SelectedFolderPath 配下）にあれば "- {oldName}" を "- {newName}" に置換
-                var screenListPath = FindScreenListFilePath();
+                var screenListPath = _screenListService.FindScreenListFilePath(SelectedFolderPath, SelectedItem?.FullPath);
                 if (!string.IsNullOrWhiteSpace(screenListPath) && File.Exists(screenListPath))
                 {
                     try
@@ -500,7 +506,7 @@ namespace _2vdm_spec_generator.ViewModel
             if (SelectedItem == null || !SelectedItem.IsFile) return;
 
             // 画面一覧ファイルが存在するか確認（SelectedFolderPath または SelectedItem の親フォルダを探索）
-            var screenListPath = FindScreenListFilePath();
+            var screenListPath = _screenListService.FindScreenListFilePath(SelectedFolderPath, SelectedItem?.FullPath);
 
             string classType;
             if (screenListPath != null)
@@ -536,7 +542,7 @@ namespace _2vdm_spec_generator.ViewModel
             string path = SelectedItem.FullPath;
             string currentMarkdown = File.Exists(path) ? File.ReadAllText(path) : string.Empty;
 
-            var builder = new UiToMarkdownConverter();
+            var builder = _uiToMd;
             string newMarkdown = classType switch
             {
                 "画面一覧クラスの追加" => builder.AddClassHeading(currentMarkdown, " 画面一覧"),
@@ -558,7 +564,7 @@ namespace _2vdm_spec_generator.ViewModel
             // クラス追加時は画面一覧に同名がなければ追加
             if (classType == "画面クラスの追加" && !string.IsNullOrWhiteSpace(inputName))
             {
-                await EnsureScreenListHasClass(inputName);
+                await _screenListService.EnsureScreenListHasClassAsync(SelectedFolderPath, SelectedItem?.FullPath, inputName);
             }
             // FolderItems が更新されて選択が外れる問題を防ぐため、FolderItems 内の実インスタンスに SelectedItem を再解決
             ResolveSelectedItemByPath(path);
@@ -567,105 +573,9 @@ namespace _2vdm_spec_generator.ViewModel
             LoadMarkdownAndVdm(path);
         }
 
-        private string FindScreenListFilePath()
-        {
-            string basePath = SelectedFolderPath;
-            if (string.IsNullOrWhiteSpace(basePath) && SelectedItem != null && !string.IsNullOrWhiteSpace(SelectedItem.FullPath))
-                basePath = Path.GetDirectoryName(SelectedItem.FullPath);
 
-            if (string.IsNullOrWhiteSpace(basePath) || !Directory.Exists(basePath))
-                return null;
 
-            try
-            {
-                var mdFiles = Directory.GetFiles(basePath, "*.md", SearchOption.AllDirectories);
-                foreach (var f in mdFiles)
-                {
-                    try
-                    {
-                        var first = File.ReadLines(f).FirstOrDefault() ?? "";
-                        if (first.TrimStart().StartsWith("# 画面一覧", StringComparison.OrdinalIgnoreCase))
-                            return f;
-                    }
-                    catch
-                    {
-                    }
-                }
-            }
-            catch
-            {
-            }
 
-            return null;
-        }
-
-        private async Task EnsureScreenListHasClass(string className)
-        {
-            if (string.IsNullOrWhiteSpace(className)) return;
-
-            try
-            {
-                // まず SelectedFolderPath を基準に検索
-                string basePath = SelectedFolderPath;
-                if (string.IsNullOrWhiteSpace(basePath))
-                {
-                    // フォルダが未選択ならルート (SelectedItem の親など) を試す
-                    if (SelectedItem != null && !string.IsNullOrWhiteSpace(SelectedItem.FullPath))
-                    {
-                        basePath = Path.GetDirectoryName(SelectedItem.FullPath);
-                    }
-                }
-
-                if (string.IsNullOrWhiteSpace(basePath) || !Directory.Exists(basePath))
-                {
-                    return;
-                }
-
-                var mdFiles = Directory.GetFiles(basePath, "*.md", SearchOption.AllDirectories);
-
-                // 先頭行が "# 画面一覧" のファイルを探す
-                string screenListFile = mdFiles.FirstOrDefault(f =>
-                {
-                    try
-                    {
-                        var first = File.ReadLines(f).FirstOrDefault() ?? "";
-                        return first.TrimStart().StartsWith("# 画面一覧", StringComparison.OrdinalIgnoreCase);
-                    }
-                    catch
-                    {
-                        return false;
-                    }
-                });
-
-                // 見つからなければルートに作成する
-                if (screenListFile == null)
-                {
-                    screenListFile = Path.Combine(basePath, "ScreenList.md");
-                    var init = "# 画面一覧" + Environment.NewLine + Environment.NewLine;
-                    File.WriteAllText(screenListFile, init, Encoding.UTF8);
-                }
-
-                // 内容読み込みと重複チェック
-                var content = File.ReadAllText(screenListFile);
-                var lines = content.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).ToList();
-                var targetItem = $"- {className}";
-                bool exists = lines.Any(l => string.Equals(l?.Trim(), targetItem, StringComparison.OrdinalIgnoreCase));
-                if (!exists)
-                {
-                    var conv = new UiToMarkdownConverter();
-                    var newContent = conv.AddScreenList(content, className);
-                    File.WriteAllText(screenListFile, newContent, Encoding.UTF8);
-
-                    LoadFolderItems();
-
-                    await Application.Current.MainPage.DisplayAlert("更新", $"画面一覧に '{className}' を追加しました。", "OK");
-                }
-            }
-            catch (Exception ex)
-            {
-                await Application.Current.MainPage.DisplayAlert("エラー", $"画面一覧更新中にエラーが発生しました: {ex.Message}", "OK");
-            }
-        }
 
         // ===== Markdown 保存 =====
         [RelayCommand]
@@ -705,7 +615,7 @@ namespace _2vdm_spec_generator.ViewModel
             string path = SelectedItem.FullPath;
             string currentMarkdown = File.ReadAllText(path);
 
-            var builder = new UiToMarkdownConverter();
+            var builder = _uiToMd;
             string newMarkdown = builder.AddScreenList(currentMarkdown, screenName.Trim());
             File.WriteAllText(path, newMarkdown);
 
@@ -740,7 +650,7 @@ namespace _2vdm_spec_generator.ViewModel
             string path = SelectedItem.FullPath;
             string currentMarkdown = File.ReadAllText(path);
 
-            var builder = new UiToMarkdownConverter();
+            var builder = _uiToMd;
             string newMarkdown = builder.AddButton(currentMarkdown, normalized);
             File.WriteAllText(path, newMarkdown);
 
@@ -856,7 +766,7 @@ namespace _2vdm_spec_generator.ViewModel
                 File.WriteAllText(Path.ChangeExtension(mdPath, ".vdmpp"), newVdm);
 
                 // positions.json の名前キーもリネーム（位置保持）
-                RenamePositionEntry(mdPath, oldName, newName);
+                _positionStore.RenamePositionEntry(mdPath, oldName, newName);
 
                 // 反映
                 MarkdownContent = updatedMarkdown;
@@ -943,37 +853,7 @@ namespace _2vdm_spec_generator.ViewModel
             return string.Join(Environment.NewLine, lines);
         }
 
-        private void RenamePositionEntry(string mdPath, string oldName, string newName)
-        {
-            try
-            {
-                var posPath = Path.ChangeExtension(mdPath, ".positions.json");
-                if (!File.Exists(posPath)) return;
 
-                var json = File.ReadAllText(posPath);
-                var list = JsonSerializer.Deserialize<List<GuiElementPosition>>(json);
-                if (list == null || list.Count == 0) return;
-
-                bool changed = false;
-                foreach (var p in list)
-                {
-                    if (string.Equals((p.Name ?? "").Trim(), oldName, StringComparison.Ordinal))
-                    {
-                        p.Name = newName;
-                        changed = true;
-                    }
-                }
-
-                if (!changed) return;
-
-                var options = new JsonSerializerOptions { WriteIndented = true };
-                File.WriteAllText(posPath, JsonSerializer.Serialize(list, options));
-            }
-            catch
-            {
-                // 無視（ログ追加するならここ）
-            }
-        }
 
         public async Task EditSelectedEventAsync()
         {
@@ -1023,7 +903,7 @@ namespace _2vdm_spec_generator.ViewModel
             {
                 string currentMarkdown = File.Exists(mdPath) ? File.ReadAllText(mdPath) : string.Empty;
 
-                string updatedMarkdown = ReplaceEventTargetInMarkdown(currentMarkdown, oldTarget, newTarget);
+                string updatedMarkdown = _uiToMd.ReplaceEventTargetInMarkdown(currentMarkdown, oldTarget, newTarget);
 
                 if (string.Equals(currentMarkdown, updatedMarkdown, StringComparison.Ordinal))
                 {
@@ -1043,7 +923,7 @@ namespace _2vdm_spec_generator.ViewModel
                 File.WriteAllText(Path.ChangeExtension(mdPath, ".vdmpp"), newVdm);
 
                 // positions.json の名前キーをリネーム（イベントノードの表示名が変わるため）
-                RenamePositionEntry(mdPath, oldTarget, newTarget);
+                _positionStore.RenamePositionEntry(mdPath, oldTarget, newTarget);
 
                 // 反映
                 MarkdownContent = updatedMarkdown;
@@ -1064,75 +944,7 @@ namespace _2vdm_spec_generator.ViewModel
                 await Application.Current.MainPage.DisplayAlert("エラー", "イベント編集に失敗しました。", "OK");
             }
         }
-        private string ReplaceEventTargetInMarkdown(string markdown, string oldTarget, string newTarget)
-        {
-            if (markdown == null) markdown = string.Empty;
 
-            var lines = markdown.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).ToList();
-
-            bool inEventList = false;
-            bool changed = false;
-
-            for (int i = 0; i < lines.Count; i++)
-            {
-                string raw = lines[i];
-                string trimStart = raw.TrimStart();
-                string trim = raw.Trim();
-
-                // イベント一覧セクションの開始/終了
-                if (trimStart.StartsWith("### イベント一覧", StringComparison.Ordinal))
-                {
-                    inEventList = true;
-                    continue;
-                }
-                if (inEventList && (trimStart.StartsWith("### ", StringComparison.Ordinal) || trimStart.StartsWith("## ", StringComparison.Ordinal) || trimStart.StartsWith("# ", StringComparison.Ordinal)))
-                {
-                    inEventList = false;
-                }
-
-                if (!inEventList) continue;
-
-                // ネスト行（分岐）はここでは変更しない（分岐編集で対応）
-                if (raw.StartsWith("  ") || raw.StartsWith("\t"))
-                    continue;
-
-                // "- ..." の行だけ対象
-                if (!trimStart.StartsWith("- ", StringComparison.Ordinal))
-                    continue;
-
-                string content = trimStart.Substring(2).Trim();
-
-                // 形式1: "何か → 遷移先"
-                int arrowIdx = content.IndexOf('→');
-                if (arrowIdx >= 0)
-                {
-                    string left = content.Substring(0, arrowIdx).Trim();
-                    string right = content.Substring(arrowIdx + 1).Trim();
-
-                    // right が oldTarget と完全一致する場合のみ置換（誤爆防止）
-                    if (string.Equals(right, oldTarget, StringComparison.Ordinal))
-                    {
-                        int lead = raw.Length - trimStart.Length;
-                        string indent = raw.Substring(0, lead);
-
-                        lines[i] = indent + "- " + left + " → " + newTarget;
-                        changed = true;
-                    }
-                    continue;
-                }
-
-                // 形式2: "遷移先だけ" のイベント（まれ）
-                if (string.Equals(content, oldTarget, StringComparison.Ordinal))
-                {
-                    int lead = raw.Length - trimStart.Length;
-                    string indent = raw.Substring(0, lead);
-                    lines[i] = indent + "- " + newTarget;
-                    changed = true;
-                }
-            }
-
-            return changed ? string.Join(Environment.NewLine, lines) : markdown;
-        }
 
         public async Task EditSelectedBranchAsync()
         {
@@ -1211,7 +1023,7 @@ namespace _2vdm_spec_generator.ViewModel
                     return;
                 }
 
-                string updatedMarkdown = ReplaceBranchLineInMarkdown(
+                string updatedMarkdown = _uiToMd.ReplaceBranchLineInMarkdown(
                     currentMarkdown,
                     parentEventLabel,
                     branchIndex,
@@ -1256,98 +1068,7 @@ namespace _2vdm_spec_generator.ViewModel
                 await Application.Current.MainPage.DisplayAlert("エラー", "分岐編集に失敗しました。", "OK");
             }
         }
-        private string ReplaceBranchLineInMarkdown(
-    string markdown,
-    string parentEventLabel,  // 例: "ボタン1押下"
-    int branchIndex,
-    string newCondition,
-    string newTarget
-)
-        {
-            if (markdown == null) markdown = string.Empty;
 
-            var lines = markdown.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).ToList();
-
-            bool inEventList = false;
-            bool changed = false;
-
-            for (int i = 0; i < lines.Count; i++)
-            {
-                string raw = lines[i];
-                string trimStart = raw.TrimStart();
-
-                // イベント一覧セクション検出
-                if (trimStart.StartsWith("### イベント一覧", StringComparison.Ordinal))
-                {
-                    inEventList = true;
-                    continue;
-                }
-                if (inEventList && (trimStart.StartsWith("### ", StringComparison.Ordinal) || trimStart.StartsWith("## ", StringComparison.Ordinal) || trimStart.StartsWith("# ", StringComparison.Ordinal)))
-                {
-                    inEventList = false;
-                }
-                if (!inEventList) continue;
-
-                // 親行を探す: "- {parentEventLabel} →"（右辺が空の行）
-                // 例: "- ボタン1押下 →"
-                if (!trimStart.StartsWith("- ", StringComparison.Ordinal)) continue;
-
-                string content = trimStart.Substring(2).Trim(); // "- " の後
-                int arrowIdx = content.IndexOf('→');
-                if (arrowIdx < 0) continue;
-
-                string left = content.Substring(0, arrowIdx).Trim();
-                string right = content.Substring(arrowIdx + 1).Trim();
-
-                // 条件分岐の親行は右辺が空（"→" だけ、または空白だけ）
-                if (!string.Equals(left, parentEventLabel, StringComparison.Ordinal)) continue;
-                if (!string.IsNullOrEmpty(right)) continue;
-
-                // 親行の直下に続くネスト行を走査し、branchIndex 番目の "- ..." を置換
-                int found = -1;
-                int j = i + 1;
-
-                while (j < lines.Count)
-                {
-                    string nestedRaw = lines[j];
-                    if (string.IsNullOrWhiteSpace(nestedRaw)) break;
-
-                    // ネスト判定（MarkdownToUiConverter と同じ判定）
-                    if (!(nestedRaw.StartsWith("  ") || nestedRaw.StartsWith("\t")))
-                        break;
-
-                    string nestedTrim = nestedRaw.TrimStart();
-
-                    if (nestedTrim.StartsWith("- ", StringComparison.Ordinal))
-                    {
-                        found++;
-
-                        if (found == branchIndex)
-                        {
-                            // 元のインデント維持
-                            string indent = nestedRaw.Substring(0, nestedRaw.Length - nestedTrim.Length);
-
-                            // 出力形式： "  - 条件 → 遷移先"
-                            // 遷移先が空なら "  - 条件" だけにする（保険）
-                            if (string.IsNullOrWhiteSpace(newTarget))
-                                lines[j] = indent + "- " + newCondition;
-                            else
-                                lines[j] = indent + "- " + newCondition + " → " + newTarget;
-
-                            changed = true;
-                            break;
-                        }
-                    }
-
-                    j++;
-                }
-
-                // 親イベントが見つかった時点で、変更できたかどうかに関わらず探索終了してよい
-                break;
-            }
-
-            return changed ? string.Join(Environment.NewLine, lines) : markdown;
-        }
 
         public async Task RenameSelectedScreenAsync()
         {
@@ -1410,7 +1131,7 @@ namespace _2vdm_spec_generator.ViewModel
                 File.WriteAllText(Path.ChangeExtension(mdPath, ".vdmpp"), newVdm);
 
                 // positions のキー名も変更（位置維持）
-                RenamePositionEntry(mdPath, oldName, newName);
+                _positionStore.RenamePositionEntry(mdPath, oldName, newName);
 
                 MarkdownContent = updatedMarkdown;
                 VdmContent = newVdm;
@@ -1509,7 +1230,7 @@ namespace _2vdm_spec_generator.ViewModel
 
             string path = SelectedItem.FullPath;
             string currentMarkdown = File.ReadAllText(path);
-            var builder = new UiToMarkdownConverter();
+            var builder = _uiToMd;
             string newMarkdown;
 
             if (!isConditional)
@@ -1608,7 +1329,7 @@ namespace _2vdm_spec_generator.ViewModel
             string path = SelectedItem.FullPath;
             string currentMarkdown = File.ReadAllText(path);
 
-            var builder = new UiToMarkdownConverter();
+            var builder = _uiToMd;
             string newMarkdown = builder.AddTimeoutEvent(currentMarkdown, seconds, target);
             File.WriteAllText(path, newMarkdown);
 
@@ -1674,19 +1395,19 @@ namespace _2vdm_spec_generator.ViewModel
             var normalized = NormalizeMarkdownText(value ?? string.Empty);
 
             if (!string.Equals(value ?? string.Empty, normalized, StringComparison.Ordinal))
-                            {
-                                try
+            {
+                try
                 {
                     _isNormalizingMarkdown = true;
                     MarkdownContent = normalized;
-                                    }
-                                finally
+                }
+                finally
                 {
                     _isNormalizingMarkdown = false;
-                                    }
-                                return; // 正規化後の再通知で下の処理が走る
-                            }
-                GuiElements = new ObservableCollection<GuiElement>(converter.Convert(normalized));
+                }
+                return; // 正規化後の再通知で下の処理が走る
+            }
+            GuiElements = new ObservableCollection<GuiElement>(converter.Convert(normalized));
 
             // タイムアウトは固定フラグ（ユーザーが移動できない）
             foreach (var el in GuiElements.Where(g => g.Type == GuiElementType.Timeout))
@@ -2164,7 +1885,7 @@ namespace _2vdm_spec_generator.ViewModel
                     return;
                 }
 
-                var blocks = ExtractButtonEventBlocks(md, el.Name);
+                var blocks = _uiToMd.ExtractButtonEventBlocks(md, el.Name);
 
                 _copiedNode = new CopiedNode
                 {
@@ -2253,7 +1974,7 @@ namespace _2vdm_spec_generator.ViewModel
                     return;
                 }
 
-                string updated = PasteButtonWithEventsIntoMarkdown(md, _copiedNode.Name, newName, _copiedNode.EventBlocks);
+                string updated = _uiToMd.PasteButtonWithEventsIntoMarkdown(md, _copiedNode.Name, newName, _copiedNode.EventBlocks);
 
                 File.WriteAllText(mdPath, updated, Encoding.UTF8);
 
@@ -2263,7 +1984,7 @@ namespace _2vdm_spec_generator.ViewModel
                 File.WriteAllText(Path.ChangeExtension(mdPath, ".vdmpp"), newVdm, Encoding.UTF8);
 
                 // 位置：新ボタンにオフセットで追加
-                AddOrUpdatePositionEntry(mdPath, newName, _copiedNode.X + 30, _copiedNode.Y + 30);
+                _positionStore.AddOrUpdatePositionEntry(mdPath, newName, _copiedNode.X + 30, _copiedNode.Y + 30);
 
                 MarkdownContent = updated;
                 VdmContent = newVdm;
@@ -2302,7 +2023,7 @@ namespace _2vdm_spec_generator.ViewModel
                     return;
                 }
 
-                string updated = PasteScreenIntoScreenListMarkdown(md, _copiedNode.Name, newScreen);
+                string updated = _uiToMd.PasteScreenIntoScreenListMarkdown(md, _copiedNode.Name, newScreen);
                 File.WriteAllText(mdPath, updated, Encoding.UTF8);
 
                 // 画面ファイルも複製（元が見つかって内容がある場合）
@@ -2317,7 +2038,7 @@ namespace _2vdm_spec_generator.ViewModel
                 var newVdm = vdmConv.ConvertToVdm(updated);
                 File.WriteAllText(Path.ChangeExtension(mdPath, ".vdmpp"), newVdm, Encoding.UTF8);
 
-                AddOrUpdatePositionEntry(mdPath, newScreen, _copiedNode.X + 30, _copiedNode.Y + 30);
+                _positionStore.AddOrUpdatePositionEntry(mdPath, newScreen, _copiedNode.X + 30, _copiedNode.Y + 30);
 
                 MarkdownContent = updated;
                 VdmContent = newVdm;
@@ -2332,166 +2053,11 @@ namespace _2vdm_spec_generator.ViewModel
             await Application.Current.MainPage.DisplayAlert("情報", "このタイプは貼り付け対象外です。", "OK");
         }
 
-        private List<List<string>> ExtractButtonEventBlocks(string markdown, string buttonName)
-        {
-            var blocks = new List<List<string>>();
-            if (string.IsNullOrWhiteSpace(markdown) || string.IsNullOrWhiteSpace(buttonName)) return blocks;
 
-            var lines = markdown.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).ToList();
 
-            bool inEventList = false;
-            for (int i = 0; i < lines.Count; i++)
-            {
-                string raw = lines[i];
-                string ts = raw.TrimStart();
-                string t = raw.Trim();
 
-                if (ts.StartsWith("### イベント一覧", StringComparison.Ordinal))
-                {
-                    inEventList = true;
-                    continue;
-                }
-                if (inEventList && (ts.StartsWith("### ", StringComparison.Ordinal) || ts.StartsWith("## ", StringComparison.Ordinal)))
-                {
-                    inEventList = false;
-                }
-                if (!inEventList) continue;
 
-                // 親行: "- {button}押下 ..."
-                if (ts.StartsWith("- ", StringComparison.Ordinal))
-                {
-                    string after = ts.Substring(2).Trim();
-                    if (after.StartsWith(buttonName + "押下", StringComparison.Ordinal))
-                    {
-                        var block = new List<string> { raw };
 
-                        // 直下のネスト（分岐行）を取り込む
-                        int j = i + 1;
-                        while (j < lines.Count)
-                        {
-                            var nr = lines[j];
-                            if (string.IsNullOrWhiteSpace(nr)) break;
-                            if (!(nr.StartsWith("  ") || nr.StartsWith("\t"))) break;
-
-                            block.Add(nr);
-                            j++;
-                        }
-
-                        blocks.Add(block);
-                        i = j - 1;
-                    }
-                }
-            }
-
-            return blocks;
-        }
-
-        private string PasteButtonWithEventsIntoMarkdown(string markdown, string oldButton, string newButton, List<List<string>> copiedBlocks)
-        {
-            var lines = markdown.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).ToList();
-
-            // --- 1) ボタン一覧へ挿入 ---
-            int buttonListStart = lines.FindIndex(l => l.TrimStart().StartsWith("### 有効ボタン一覧", StringComparison.Ordinal));
-            if (buttonListStart >= 0)
-            {
-                int insertAt = -1;
-                for (int i = buttonListStart + 1; i < lines.Count; i++)
-                {
-                    var ts = lines[i].TrimStart();
-                    var t = lines[i].Trim();
-
-                    if (string.IsNullOrEmpty(t) || ts.StartsWith("### イベント一覧", StringComparison.Ordinal) || ts.StartsWith("### ", StringComparison.Ordinal) || ts.StartsWith("## ", StringComparison.Ordinal))
-                    {
-                        insertAt = i;
-                        break;
-                    }
-                    if (t == "- " + oldButton)
-                    {
-                        insertAt = i + 1; // 旧ボタンの直後
-                        break;
-                    }
-                }
-                if (insertAt < 0) insertAt = lines.Count;
-                lines.Insert(insertAt, "- " + newButton);
-            }
-
-            // --- 2) イベント一覧へ挿入 ---
-            int eventListStart = lines.FindIndex(l => l.TrimStart().StartsWith("### イベント一覧", StringComparison.Ordinal));
-            if (eventListStart >= 0 && copiedBlocks != null && copiedBlocks.Count > 0)
-            {
-                // 元ボタンのブロック末尾位置を探す
-                int insertAt = -1;
-
-                for (int i = eventListStart + 1; i < lines.Count; i++)
-                {
-                    var ts = lines[i].TrimStart();
-                    if (ts.StartsWith("### ", StringComparison.Ordinal) || ts.StartsWith("## ", StringComparison.Ordinal))
-                    {
-                        insertAt = i; // イベント一覧の末尾
-                        break;
-                    }
-
-                    if (ts.StartsWith("- ", StringComparison.Ordinal))
-                    {
-                        var after = ts.Substring(2).Trim();
-                        if (after.StartsWith(oldButton + "押下", StringComparison.Ordinal))
-                        {
-                            // そのブロック終端まで進める
-                            int j = i + 1;
-                            while (j < lines.Count)
-                            {
-                                var nr = lines[j];
-                                if (string.IsNullOrWhiteSpace(nr)) break;
-                                if (!(nr.StartsWith("  ") || nr.StartsWith("\t"))) break;
-                                j++;
-                            }
-                            insertAt = j; // 旧ブロック直後
-                            break;
-                        }
-                    }
-                }
-                if (insertAt < 0) insertAt = lines.Count;
-
-                // ブロック挿入（ボタン名だけ差し替え）
-                var toInsert = new List<string>();
-                foreach (var block in copiedBlocks)
-                {
-                    foreach (var line in block)
-                    {
-                        // "- 旧押下" の置換（インデントは維持）
-                        string replaced = line.Replace(oldButton + "押下", newButton + "押下", StringComparison.Ordinal);
-                        toInsert.Add(replaced);
-                    }
-                }
-
-                // 1ブロック目の前に空行を入れたいならここで調整（好み）
-                // toInsert.Insert(0, "");
-
-                lines.InsertRange(insertAt, toInsert);
-            }
-
-            return string.Join(Environment.NewLine, lines);
-        }
-
-        private string PasteScreenIntoScreenListMarkdown(string markdown, string oldScreen, string newScreen)
-        {
-            var lines = markdown.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None).ToList();
-
-            // "- 旧" の直後に挿入。無ければ末尾
-            int insertAt = -1;
-            for (int i = 0; i < lines.Count; i++)
-            {
-                if (lines[i].Trim() == "- " + oldScreen)
-                {
-                    insertAt = i + 1;
-                    break;
-                }
-            }
-            if (insertAt < 0) insertAt = lines.Count;
-            lines.Insert(insertAt, "- " + newScreen);
-
-            return string.Join(Environment.NewLine, lines);
-        }
         private string FindMdFileForScreenName(string screenName)
         {
             if (string.IsNullOrWhiteSpace(screenName) || string.IsNullOrWhiteSpace(SelectedFolderPath))
@@ -2551,41 +2117,7 @@ namespace _2vdm_spec_generator.ViewModel
                 return null;
             }
         }
-        private void AddOrUpdatePositionEntry(string mdPath, string name, float x, float y)
-        {
-            try
-            {
-                var posPath = Path.ChangeExtension(mdPath, ".positions.json");
-                List<GuiElementPosition> list = null;
 
-                if (File.Exists(posPath))
-                {
-                    var json = File.ReadAllText(posPath);
-                    list = JsonSerializer.Deserialize<List<GuiElementPosition>>(json) ?? new List<GuiElementPosition>();
-                }
-                else
-                {
-                    list = new List<GuiElementPosition>();
-                }
-
-                var found = list.FirstOrDefault(p => string.Equals((p.Name ?? "").Trim(), name, StringComparison.Ordinal));
-                if (found == null)
-                {
-                    list.Add(new GuiElementPosition { Name = name, X = x, Y = y });
-                }
-                else
-                {
-                    found.X = x; found.Y = y;
-                }
-
-                var opt = new JsonSerializerOptions { WriteIndented = true };
-                File.WriteAllText(posPath, JsonSerializer.Serialize(list, opt), Encoding.UTF8);
-            }
-            catch
-            {
-                // 黙殺
-            }
-        }
 
 
 
@@ -2615,42 +2147,7 @@ namespace _2vdm_spec_generator.ViewModel
         public IEnumerable<string> ScreenNamesForRenderer { get; private set; } = Enumerable.Empty<string>();
 
         // 既存の LoadMarkdownAndVdm メソッド末尾で呼ぶことを想定したヘルパー
-        public IEnumerable<string> GetScreenManagementScreenNames()
-        {
-            try
-            {
-                var path = FindScreenListFilePath();
-                if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
-                    return Enumerable.Empty<string>();
 
-                var lines = File.ReadAllLines(path);
-                // 見出し "# 画面一覧" を探す
-                int idx = Array.FindIndex(lines, l => !string.IsNullOrWhiteSpace(l) && l.TrimStart().StartsWith("# 画面一覧", StringComparison.OrdinalIgnoreCase));
-                if (idx < 0) return Enumerable.Empty<string>();
-
-                var results = new List<string>();
-                for (int i = idx + 1; i < lines.Length; i++)
-                {
-                    var t = lines[i].Trim();
-                    if (string.IsNullOrEmpty(t)) continue; // 空行はスキップ
-                    if (t.StartsWith("#")) break; // 次の見出しで終了
-                    if (t.StartsWith("- "))
-                    {
-                        var name = t.Substring(2).Trim();
-                        // 末尾の 'へ' を削る（もしあれば）、余分な矢印も除去
-                        if (name.EndsWith("へ")) name = name.Substring(0, name.Length - 1).Trim();
-                        // normalize: トリムだけ。Renderer 側でもさらに正規化するがここでも正規化を行う
-                        if (!string.IsNullOrWhiteSpace(name)) results.Add(name);
-                    }
-                }
-
-                return results.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-            }
-            catch
-            {
-                return Enumerable.Empty<string>();
-            }
-        }
     }
 
     /// <summary>
