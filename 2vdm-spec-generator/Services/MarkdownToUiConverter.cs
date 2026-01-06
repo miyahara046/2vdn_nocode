@@ -9,6 +9,8 @@ namespace _2vdm_spec_generator.Services
     internal class MarkdownToUiConverter
     {
 
+        private static readonly Regex BulletPattern = new Regex(@"^\s*(?:-|\*|•|⦁)\s+(?<Text>.+?)\s*$", RegexOptions.Compiled);
+
         private static readonly Regex EventPattern = new Regex(@"^(?<Name>.*?)\s*→\s*(?<Target>.*)$", RegexOptions.Compiled);
 
         private static readonly Regex OperationPattern = new Regex(@"^(?<Operation>.*?)(?<Trigger>押下|で)\s*→\s*(?<Target>.*)$", RegexOptions.Compiled);
@@ -99,6 +101,32 @@ namespace _2vdm_spec_generator.Services
 
 
 
+
+        private static bool TryGetBulletText(string line, out string text)
+        {
+            text = string.Empty;
+            if (string.IsNullOrWhiteSpace(line)) return false;
+
+            var m = BulletPattern.Match(line);
+            if (!m.Success) return false;
+
+            text = (m.Groups["Text"].Value ?? string.Empty).Trim();
+            return text.Length > 0;
+        }
+
+        private static bool IsHeadingLine(string line, params string[] headings)
+        {
+            var t = (line ?? string.Empty).Trim();
+            // Markdown見出し記号が無い場合も考慮して、両方マッチさせる
+            // 例: "### 有効ボタン一覧" / "有効ボタン一覧"
+            foreach (var h in headings)
+            {
+                if (t == h) return true;
+                if (t.StartsWith("#") && t.TrimStart('#', ' ').Trim() == h) return true;
+            }
+            return false;
+        }
+
         public IEnumerable<GuiElement> Convert(string markdown)
         {
             var elements = new List<GuiElement>();
@@ -113,9 +141,9 @@ namespace _2vdm_spec_generator.Services
                 for (int i = 1; i < lines.Count; i++)
                 {
                     var line = lines[i].Trim();
-                    if (line.StartsWith("- "))
+                    if (TryGetBulletText(line, out var bulletText))
                     {
-                        var name = line.Substring(2).Trim();
+                        var name = bulletText;
                         elements.Add(new GuiElement
                         {
                             Type = GuiElementType.Screen,
@@ -135,9 +163,9 @@ namespace _2vdm_spec_generator.Services
                 if (lines.Count > 1)
                 {
                     var second = lines[1].Trim();
-                    if (second.StartsWith("- "))
+                    if (TryGetBulletText(second, out var bulletText))
                     {
-                        var content = second.Length > 2 ? second.Substring(2).Trim() : string.Empty;
+                        var content = bulletText;
 
                         // タイムアウト → 遷移先 の形式に対応
                         var timeoutMatch = EventPattern.Match(content);
@@ -178,25 +206,31 @@ namespace _2vdm_spec_generator.Services
 
                 // 2. Button 抽出 (変更なし)
                 var buttonElements = new List<GuiElement>();
+                var seenButtons = new HashSet<string>(StringComparer.Ordinal);
                 if (lines.Count > 2)
                 {
                     for (int i = 2; i < lines.Count; i++)
                     {
                         var line = lines[i].Trim();
-                        if (line.StartsWith("### 有効ボタン一覧"))
+                        if (IsHeadingLine(line, "有効ボタン一覧"))
                         {
                             for (int k = i + 1; k < lines.Count; k++)
                             {
                                 var sub = lines[k].Trim();
 
-                                if (string.IsNullOrEmpty(sub) || sub.StartsWith("### イベント一覧") || sub.StartsWith("### ") || sub.StartsWith("## "))
+                                if (string.IsNullOrEmpty(sub) || IsHeadingLine(sub, "イベント一覧") || sub.StartsWith("### ") || sub.StartsWith("## "))
                                 {
                                     goto EndOfButtonList;
                                 }
 
-                                if (sub.StartsWith("- "))
+                                if (TryGetBulletText(sub, out var bulletText))
                                 {
-                                    var name = sub.Substring(2).Trim();
+                                    var name = bulletText;
+
+                                    // 重複排除（増殖ストッパー）
+                                    if (!seenButtons.Add(name))
+                                        continue;
+
                                     var newButton = new GuiElement
                                     {
                                         Type = GuiElementType.Button,
@@ -206,6 +240,7 @@ namespace _2vdm_spec_generator.Services
                                     buttonElements.Add(newButton);
                                     elements.Add(newButton);
                                 }
+
                             }
                         EndOfButtonList:;
                             break;
@@ -219,7 +254,7 @@ namespace _2vdm_spec_generator.Services
                     for (int i = 2; i < lines.Count; i++)
                     {
                         var line = lines[i].Trim();
-                        if (line.StartsWith("### イベント一覧"))
+                        if(IsHeadingLine(line, "イベント一覧"))
                         {
                             for (int k = i + 1; k < lines.Count; k++)
                             {
@@ -233,9 +268,10 @@ namespace _2vdm_spec_generator.Services
                                     goto EndOfEventList;
                                 }
 
-                                if (sub.StartsWith("- "))
+                                if (TryGetBulletText(sub, out var bulletText))
                                 {
-                                    var content = sub.Substring(2).Trim();
+                                    var content = bulletText;
+
 
                                     // 押下/で イベントの解析 (OperationPatternを使用)
                                     var opMatch = OperationPattern.Match(content);
@@ -272,44 +308,54 @@ namespace _2vdm_spec_generator.Services
 
                                             // ネストされたリストは UiToMarkdownConverter では "  - {cond} → {target}" の形式で出力されるため
                                             // 行頭に2つ以上のスペースまたはタブがある行をネスト行とみなす
+                                            // 分岐行の直後は、ネストされていなくても bullet が続くことがある（外部エディタ対策）
+                                            // そのため「bullet が続く限り」branches 候補として読む。
+                                            // ただし、新しいイベント（例: "2押下 → ..." や "タイムアウト → ..."）が来たら branches を終了する。
                                             while (startK < lines.Count)
                                             {
                                                 var nestedRaw = lines[startK];
                                                 if (string.IsNullOrWhiteSpace(nestedRaw)) break;
 
-                                                // ネスト判定: 先頭に2つ以上のスペースまたはタブがあるかどうか
-                                                if (!(nestedRaw.StartsWith("  ") || nestedRaw.StartsWith("\t")))
+                                                // ヘッダに到達したら終了
+                                                var nestedTrimAll = nestedRaw.Trim();
+                                                if (nestedTrimAll.StartsWith("### ") || nestedTrimAll.StartsWith("## "))
                                                     break;
 
-                                                var nestedTrim = nestedRaw.Trim();
-                                                if (nestedTrim.StartsWith("- "))
-                                                {
-                                                    var nestedContent = nestedTrim.Substring(2).Trim();
-                                                    var nestedMatch = EventPattern.Match(nestedContent);
-                                                    if (nestedMatch.Success)
-                                                    {
-                                                        var cond = nestedMatch.Groups["Name"].Value.Trim();
-                                                        var nestedTarget = nestedMatch.Groups["Target"].Value.Trim();
+                                                // bullet 行でなければ終了
+                                                if (!TryGetBulletText(nestedTrimAll, out var nestedContent))
+                                                    break;
 
-                                                        branches.Add(new GuiElement.EventBranch
-                                                        {
-                                                            Condition = cond,
-                                                            Target = nestedTarget
-                                                        });
-                                                    }
-                                                    else
+                                                // 次の「通常イベント」っぽいものが来たら branches 終了（外側ループに任せる）
+                                                // 例: "1押下 → ..." / "タイムアウト → 画面Aへ"
+                                                if (OperationPattern.IsMatch(nestedContent) || nestedContent.StartsWith("タイムアウト"))
+                                                    break;
+
+                                                // branch は基本 "条件 → 遷移先" で書かれる
+                                                var nestedMatch = EventPattern.Match(nestedContent);
+                                                if (nestedMatch.Success)
+                                                {
+                                                    var cond = nestedMatch.Groups["Name"].Value.Trim();
+                                                    var nestedTarget = nestedMatch.Groups["Target"].Value.Trim();
+
+                                                    branches.Add(new GuiElement.EventBranch
                                                     {
-                                                        // '→' が無い場合は全体を条件として格納
-                                                        branches.Add(new GuiElement.EventBranch
-                                                        {
-                                                            Condition = nestedTrim,
-                                                            Target = string.Empty
-                                                        });
-                                                    }
+                                                        Condition = cond,
+                                                        Target = nestedTarget
+                                                    });
+                                                }
+                                                else
+                                                {
+                                                    // "→" が無い場合は条件だけ、として保持（必要なら）
+                                                    branches.Add(new GuiElement.EventBranch
+                                                    {
+                                                        Condition = nestedContent,
+                                                        Target = string.Empty
+                                                    });
                                                 }
 
                                                 startK++;
                                             }
+
                                             // k を読み進めた位置に戻す
                                             k = Math.Max(k, startK - 1);
 

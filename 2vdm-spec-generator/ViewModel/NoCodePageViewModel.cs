@@ -19,6 +19,57 @@ namespace _2vdm_spec_generator.ViewModel
 {
     public partial class NoCodePageViewModel : ObservableObject
     {
+        // ===== Markdown 正規化 =====
+        // 異なるエディタ由来のMarkdown（BOM/改行/NBSPなど）の揺れを吸収する。
+        private static string NormalizeMarkdownText(string markdown)
+        {
+            if (markdown == null) return string.Empty;
+
+            // 1) BOM除去（ReadAllText だとBOMが残るケースがある）
+            if (markdown.Length > 0 && markdown[0] == '\uFEFF')
+                markdown = markdown.Substring(1);
+
+            // 2) 改行統一（CRLF/CR -> LF）
+            markdown = markdown.Replace("\r\n", "\n").Replace("\r", "\n");
+
+            // 3) NBSP を通常スペースに
+            markdown = markdown.Replace('\u00A0', ' ');
+
+            // 4) 箇条書き記号を "- " に統一（* / • / ⦁）
+            var lines = markdown.Split('\n');
+                        for (int i = 0; i < lines.Length; i++)
+                           {
+                lines[i] = BulletNormalizeRegex.Replace(
+                lines[i],
+                m => $"{m.Groups["indent"].Value}- "
+                                );
+                            }
+            markdown = string.Join("\n", lines);
+            return markdown;
+        }
+
+        private static string ReadAndNormalizeMarkdown(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+                return string.Empty;
+
+            // BOM を検出しつつ読む（UTF-8 BOM / UTF-16 なども検出可能）
+            using var sr = new StreamReader(path, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+            return NormalizeMarkdownText(sr.ReadToEnd());
+        }
+
+        private static string GetFirstNonEmptyLine(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+            var lines = text.Split('\n');
+            foreach (var l in lines)
+            {
+                var t = (l ?? string.Empty).Trim();
+                if (t.Length == 0) continue;
+                return t;
+            }
+            return string.Empty;
+        }
         // ========== バインド可能プロパティ (ObservableProperty により自動でプロパティが生成される) ===========
 
         [ObservableProperty] private string selectedFolderPath;
@@ -34,11 +85,19 @@ namespace _2vdm_spec_generator.ViewModel
         [ObservableProperty]
         private ObservableCollection<GuiElement> guiElements = new();
         [ObservableProperty]
-　　　　private GuiElement selectedGuiElement;
+        private GuiElement selectedGuiElement;
 
         public ObservableCollection<FolderItem> FolderItems { get; } = new();
 
         private readonly string mdFileName = "NewClass.md";
+
+        // Markdown正規化の再入防止
+        private bool _isNormalizingMarkdown;
+
+        // 行頭の箇条書き（*, •, ⦁）を "- " に統一（インデント維持）
+        private static readonly Regex BulletNormalizeRegex =
+            new Regex(@"^(?<indent>\s*)(?:\*|•|⦁)\s+", RegexOptions.Compiled);
+
 
         // ===== フォルダ選択 =====
         [RelayCommand]
@@ -216,12 +275,14 @@ namespace _2vdm_spec_generator.ViewModel
 
         private void LoadMarkdownAndVdm(string path)
         {
-            MarkdownContent = File.Exists(path) ? File.ReadAllText(path) : "";
+            // 読み込み直後に正規化（他エディタ由来の改行/BOM差分を吸収）
+            MarkdownContent = ReadAndNormalizeMarkdown(path);
 
             var converter = new MarkdownToVdmConverter();
             VdmContent = converter.ConvertToVdm(MarkdownContent);
 
-            string firstLine = File.ReadLines(path).FirstOrDefault() ?? "";
+            // 正規化済みMarkdownから先頭行を判定する
+            string firstLine = GetFirstNonEmptyLine(MarkdownContent);
             if (firstLine.TrimStart().StartsWith("##", StringComparison.OrdinalIgnoreCase))
             {
                 IsClassAddButtonVisible = false;
@@ -434,7 +495,7 @@ namespace _2vdm_spec_generator.ViewModel
         }
 
         [RelayCommand]
-　　　　　private async Task AddClassHeadingAsync()
+        private async Task AddClassHeadingAsync()
         {
             if (SelectedItem == null || !SelectedItem.IsFile) return;
 
@@ -1427,7 +1488,7 @@ namespace _2vdm_spec_generator.ViewModel
                 }
             }
 
-            
+
             if (string.IsNullOrWhiteSpace(selectedButton))
             {
                 selectedButton = await Shell.Current.DisplayActionSheet(
@@ -1605,10 +1666,27 @@ namespace _2vdm_spec_generator.ViewModel
         }
 
         partial void OnMarkdownContentChanged(string value)
+
         {
             // Markdownが変更されたら GUI 要素を更新
             var converter = new MarkdownToUiConverter();
-            GuiElements = new ObservableCollection<GuiElement>(converter.Convert(value));
+            // 編集中テキストも正規化してから解析（ただし MarkdownContent を再代入すると再帰するので変換入力のみ）
+            var normalized = NormalizeMarkdownText(value ?? string.Empty);
+
+            if (!string.Equals(value ?? string.Empty, normalized, StringComparison.Ordinal))
+                            {
+                                try
+                {
+                    _isNormalizingMarkdown = true;
+                    MarkdownContent = normalized;
+                                    }
+                                finally
+                {
+                    _isNormalizingMarkdown = false;
+                                    }
+                                return; // 正規化後の再通知で下の処理が走る
+                            }
+                GuiElements = new ObservableCollection<GuiElement>(converter.Convert(normalized));
 
             // タイムアウトは固定フラグ（ユーザーが移動できない）
             foreach (var el in GuiElements.Where(g => g.Type == GuiElementType.Timeout))
@@ -1623,7 +1701,7 @@ namespace _2vdm_spec_generator.ViewModel
             // 追加: 編集時にも選択ファイルがあればタイトルを更新する
             if (SelectedItem != null)
             {
-                DiagramTitle = ExtractDiagramTitleFromMarkdown(value, SelectedItem);
+                DiagramTitle = ExtractDiagramTitleFromMarkdown(normalized, SelectedItem);
             }
             else
             {
@@ -2002,7 +2080,7 @@ namespace _2vdm_spec_generator.ViewModel
         public async Task OpenFileForScreen(string screenName)
         {
             if (string.IsNullOrWhiteSpace(screenName)) return;
-            if (string.IsNullOrWhiteSpace(SelectedFolderPath)) 
+            if (string.IsNullOrWhiteSpace(SelectedFolderPath))
             {
                 await Application.Current.MainPage.DisplayAlert("エラー", "フォルダが選択されていません。", "OK");
                 return;
@@ -2580,12 +2658,12 @@ namespace _2vdm_spec_generator.ViewModel
     /// .positions.json にシリアライズされる単純な構造体（クラス）
     /// </summary>
     public class GuiElementPosition
-        {
-            public string Name { get; set; }
-            public float X { get; set; }
-            public float Y { get; set; }
-        }
-
-        // OnMarkdownContentChanged の最後に LoadGuiPositionsToElements を呼ぶようにしてください
-       
+    {
+        public string Name { get; set; }
+        public float X { get; set; }
+        public float Y { get; set; }
     }
+
+    // OnMarkdownContentChanged の最後に LoadGuiPositionsToElements を呼ぶようにしてください
+
+}
