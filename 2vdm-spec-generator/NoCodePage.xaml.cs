@@ -141,7 +141,7 @@ namespace _2vdm_spec_generator
                                 {
                                     GuiElementType.Button => new[] { "イベント追加","コピー", "貼り付け", "ボタン名変更", "削除" },
                                     GuiElementType.Screen => new[] { "開く", "コピー", "貼り付け", "画面名変更", "削除"},
-                                    GuiElementType.Event => el.IsConditional
+                                    GuiElementType.Event => el.IsBranch
                                                                 ? new[] { "分岐編集", "削除" }
                                                                 : new[] { "イベント変更", "削除" },
                                     GuiElementType.Timeout => new[] { "タイムアウト編集", "削除" },

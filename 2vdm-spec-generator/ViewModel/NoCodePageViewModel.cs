@@ -866,7 +866,7 @@ namespace _2vdm_spec_generator.ViewModel
             if (SelectedItem == null || string.IsNullOrWhiteSpace(SelectedItem.FullPath)) return;
 
             // 分岐イベントはここでは扱わない（別コマンド推奨）
-            if (el.IsConditional)
+            if (el.IsBranch)
             {
                 await Application.Current.MainPage.DisplayAlert("情報", "分岐イベントは「分岐編集」で対応してください。", "OK");
                 return;
@@ -961,7 +961,7 @@ namespace _2vdm_spec_generator.ViewModel
                 await Application.Current.MainPage.DisplayAlert("情報", "分岐が選択されていません。", "OK");
                 return;
             }
-            if (!parent.IsConditional || parent.Branches == null || parent.Branches.Count == 0)
+            if (!parent.IsBranch || parent.Branches == null || parent.Branches.Count == 0)
             {
                 await Application.Current.MainPage.DisplayAlert("情報", "このイベントは分岐を持っていません。", "OK");
                 return;
@@ -1057,7 +1057,7 @@ namespace _2vdm_spec_generator.ViewModel
                 // 選択復元（親イベント）
                 SelectedGuiElement = GuiElements.FirstOrDefault(g =>
                     g.Type == GuiElementType.Event &&
-                    g.IsConditional &&
+                    g.IsBranch &&
                     !string.IsNullOrWhiteSpace(g.Name) &&
                     string.Equals(g.Name.Trim(), parentEventLabel, StringComparison.Ordinal));
 
@@ -1222,7 +1222,7 @@ namespace _2vdm_spec_generator.ViewModel
             }
 
 
-            bool isConditional = await Shell.Current.DisplayAlert(
+            bool IsBranch = await Shell.Current.DisplayAlert(
                 "条件分岐イベント",
                 "このイベントに条件分岐を追加しますか？",
                 "はい", "いいえ"
@@ -1233,7 +1233,7 @@ namespace _2vdm_spec_generator.ViewModel
             var builder = _uiToMd;
             string newMarkdown;
 
-            if (!isConditional)
+            if (!IsBranch)
             {
                 // 非条件イベントでも ConditionInputPopup を再利用する（条件欄は非表示にする）
                 var popup = new ConditionInputPopup

@@ -78,7 +78,8 @@ namespace _2vdm_spec_generator.ViewModel
                 {
                     _branches = value ?? new List<EventBranch>();
                     OnPropertyChanged(nameof(Branches));
-                    OnPropertyChanged(nameof(IsConditional));
+                    OnPropertyChanged(nameof(IsBranch));
+                    OnPropertyChanged(nameof(IsConditional)); // 互換通知
                 }
             }
         }
@@ -86,7 +87,12 @@ namespace _2vdm_spec_generator.ViewModel
         /// <summary>
         /// Branches が1つ以上あるかどうか（条件分岐イベント判定用）
         /// </summary>
-        public bool IsConditional => Branches != null && Branches.Any();
+        public bool IsBranch => Branches != null && Branches.Any();
+
+        /// <summary>
+        /// 旧名互換（以前は IsConditional として参照していた）
+        /// </summary>
+        public bool IsConditional => IsBranch;
 
         // プロパティ値が変更されたことを UI に通知するためのイベント
         public event PropertyChangedEventHandler PropertyChanged;
